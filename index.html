@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="icon" href="/src/assets/app-icon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n="app_title">Mod Dependency Updater</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div class="container">
+      <header class="app-header">
+        <div class="brand">
+          <img src="/src/assets/app-icon.ico" alt="App Icon" class="brand-icon" />
+          <div>
+            <h1 data-i18n="app_title">Mod Dependency Updater</h1>
+            <p class="subtitle" data-i18n="app_subtitle">Update your Gradle dependencies with ease</p>
+          </div>
+        </div>
+        <div class="controls">
+          <select id="lang-select" aria-label="Language">
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </header>
+
+      <main>
+        <div class="card">
+          <div class="form-group">
+            <label for="gradle-path" data-i18n="label_gradle_path">build.gradle Path</label>
+            <div class="input-group">
+              <input id="gradle-path" type="text" data-i18n-placeholder="ph_select_gradle" placeholder="Select your build.gradle..." readonly />
+              <button id="browse-btn" class="secondary" data-i18n="btn_browse">Browse</button>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="source-select" data-i18n="label_source">Source</label>
+              <select id="source-select">
+                <option value="curseforge">CurseForge</option>
+                <option value="modrinth">Modrinth</option>
+              </select>
+            </div>
+            
+            <div class="form-group" id="project-group">
+              <label id="project-label" for="project-id" data-i18n="label_project_id">Project ID</label>
+              <input id="project-id" type="text" data-i18n-placeholder="ph_project_id" placeholder="123456" />
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group" id="mc-version-select-group">
+              <label for="mc-version" data-i18n="label_mc_version">Minecraft Version</label>
+              <select id="mc-version"></select>
+            </div>
+
+            <div class="form-group" id="loader-select-group">
+              <label for="loader-select" data-i18n="label_loader">Loader</label>
+              <select id="loader-select"></select>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group" id="mc-version-input-group" style="display:none">
+              <label for="mc-version-input" data-i18n="label_mc_version_input">Minecraft Version (manual)</label>
+              <input id="mc-version-input" type="text" data-i18n-placeholder="label_mc_version" placeholder="Minecraft Version" />
+            </div>
+
+            <div class="form-group" id="loader-input-group" style="display:none">
+              <label for="loader-input" data-i18n="label_loader_input">Loader (manual)</label>
+              <input id="loader-input" type="text" data-i18n-placeholder="label_loader" placeholder="Loader" />
+            </div>
+          </div>
+
+          <div class="form-group" id="api-key-group">
+            <label for="cf-api-key" data-i18n="label_cf_api">CurseForge API Key <small data-i18n="hint_cf_api">(Optional if env var set)</small></label>
+            <input id="cf-api-key" type="password" data-i18n-placeholder="ph_cf_api" placeholder="Enter API Key..." />
+          </div>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="mode-select" data-i18n="label_mode">Mode</label>
+              <select id="mode-select">
+                <option value="single" data-i18n="mode_single">Single</option>
+                <option value="batch" data-i18n="mode_batch">Batch</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <button id="fetch-options" class="secondary" data-i18n="btn_fetch_options">Fetch Options</button>
+            </div>
+          </div>
+
+          <div class="form-group" id="batch-group" style="display:none">
+            <label for="batch-items" data-i18n="label_batch_items">Projects (one per line)</label>
+            <textarea id="batch-items" rows="10" data-i18n-placeholder="ph_batch_items" placeholder="123456\nmodrinth-slug"></textarea>
+          </div>
+
+          <button id="update-btn" class="primary" data-i18n="btn_update">Update Dependency</button>
+        </div>
+
+        <div class="output-section">
+          <h3 data-i18n="label_log">Log Output</h3>
+          <div class="input-group">
+            <button id="clear-log-btn" class="secondary" data-i18n="btn_clear_log">Clear Logs</button>
+            <button id="save-log-btn" class="secondary" data-i18n="btn_save_log">Save Logs</button>
+          </div>
+          <div id="log-output" class="log-box" data-i18n="log_wait">Waiting for action...</div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
