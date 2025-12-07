@@ -35,9 +35,15 @@ type ProjectOptions = {
   loaders: string[];
   slug?: string;
   id?: number;
+  version_to_loaders?: Record<string, string[]>;
+  loader_to_versions?: Record<string, string[]>;
 };
 
 let currentDict: Record<string, string> = {};
+let versionToLoaders: Record<string, string[]> = {};
+let loaderToVersions: Record<string, string[]> = {};
+let allVersions: string[] = [];
+let allLoaders: string[] = [];
 
 async function applyI18n(lang: string) {
   const langKey = lang === "zh-CN" ? "zh-CN" : "en";
@@ -151,6 +157,10 @@ async function fetchProjectOptions() {
     });
     const versions = result.versions || [];
     const loaders = result.loaders || [];
+    versionToLoaders = result.version_to_loaders || {};
+    loaderToVersions = result.loader_to_versions || {};
+    allVersions = versions;
+    allLoaders = loaders;
     setOptions(mcVersionSelect, versions);
     setOptions(loaderSelect, loaders);
     saveState();
@@ -163,6 +173,8 @@ async function fetchProjectOptions() {
 function clearOptions() {
   setOptions(mcVersionSelect, []);
   setOptions(loaderSelect, []);
+  versionToLoaders = {};
+  loaderToVersions = {};
 }
 
 function bindEvents() {
@@ -177,6 +189,48 @@ function bindEvents() {
   });
   if (projectIdInput) projectIdInput.addEventListener("input", clearOptions);
   if (fetchOptionsBtn) fetchOptionsBtn.addEventListener("click", fetchProjectOptions);
+  if (mcVersionSelect) mcVersionSelect.addEventListener("change", () => {
+    const ver = mcVersionSelect.value;
+    const loaders = versionToLoaders[ver] || [];
+    const targetLoaders = loaders.length ? loaders : allLoaders;
+    setOptions(loaderSelect, targetLoaders);
+    if (!targetLoaders.includes(loaderSelect.value)) {
+      loaderSelect.value = targetLoaders[0] || "";
+    }
+    const lv = loaderSelect.value;
+    const allowedVersions = loaderToVersions[lv] || [];
+    const targetVersions = allowedVersions.length ? allowedVersions : allVersions;
+    setOptions(mcVersionSelect, targetVersions);
+    if (!targetVersions.includes(ver)) {
+      mcVersionSelect.value = targetVersions[0] || "";
+    } else {
+      mcVersionSelect.value = ver;
+    }
+    saveState();
+    log(`🔄 版本选择: ${ver} → 加载器候选: ${targetLoaders.length}，版本候选: ${targetVersions.length}`);
+  });
+  if (loaderSelect) loaderSelect.addEventListener("change", () => {
+    const loader = loaderSelect.value;
+    const versions = loaderToVersions[loader] || [];
+    const targetVersions = versions.length ? versions : allVersions;
+    const currentVer = mcVersionSelect.value;
+    setOptions(mcVersionSelect, targetVersions);
+    if (!targetVersions.includes(currentVer)) {
+      mcVersionSelect.value = targetVersions[0] || "";
+    } else {
+      mcVersionSelect.value = currentVer;
+    }
+    const verLoaders = versionToLoaders[mcVersionSelect.value] || [];
+    const targetLoaders = verLoaders.length ? verLoaders : allLoaders;
+    setOptions(loaderSelect, targetLoaders);
+    if (!targetLoaders.includes(loader)) {
+      loaderSelect.value = targetLoaders[0] || "";
+    } else {
+      loaderSelect.value = loader;
+    }
+    saveState();
+    log(`🔄 加载器选择: ${loader} → 版本候选: ${targetVersions.length}，加载器候选: ${targetLoaders.length}`);
+  });
   if (browseBtn) browseBtn.addEventListener("click", async () => {
     if (!isTauriReady()) {
       log("❌ Tauri 未就绪：无法打开系统文件选择器", true);
