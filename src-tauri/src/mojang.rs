@@ -33,12 +33,9 @@ fn cache_file() -> PathBuf {
 pub async fn refresh_manifest_cache_on_startup() -> anyhow::Result<()> {
     let client = crate::util::http_client()?;
     let url = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
-    let resp = crate::util::send_with_retry(
-        client.get(url),
-        2
-    )
-    .await
-    .context("Failed to fetch Mojang manifest")?;
+    let resp = crate::util::send_with_retry(client.get(url), 2)
+        .await
+        .context("Failed to fetch Mojang manifest")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -94,7 +91,9 @@ pub fn order_mc_versions(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, s) in items {
-                if seen.insert(s.clone()) { out.push(s); }
+                if seen.insert(s.clone()) {
+                    out.push(s);
+                }
             }
             return out;
         }
@@ -111,7 +110,9 @@ pub fn order_mc_versions(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, s) in items {
-                if seen.insert(s.clone()) { out.push(s); }
+                if seen.insert(s.clone()) {
+                    out.push(s);
+                }
             }
             return out;
         }
@@ -140,17 +141,27 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
                 if idx == u16::MAX {
                     if let Some(m) = base_re.find(&sl) {
                         let base = &sl[m.start()..m.end()];
-                        if let Some(bi) = index.get(base) { idx = *bi; }
+                        if let Some(bi) = index.get(base) {
+                            idx = *bi;
+                        }
                     }
                 }
                 let mut kind: u8 = 0;
                 let mut rank: u16 = 0;
                 if let Some(cap) = rc_re.captures(&sl) {
                     kind = 1;
-                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                    rank = cap
+                        .get(1)
+                        .and_then(|g| g.as_str().parse::<u16>().ok())
+                        .map(|n| u16::MAX - n)
+                        .unwrap_or(u16::MAX);
                 } else if let Some(cap) = pre_re.captures(&sl) {
                     kind = 2;
-                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                    rank = cap
+                        .get(1)
+                        .and_then(|g| g.as_str().parse::<u16>().ok())
+                        .map(|n| u16::MAX - n)
+                        .unwrap_or(u16::MAX);
                 } else if sl.contains("snapshot") {
                     kind = 3;
                 }
@@ -160,7 +171,9 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, _, _, s) in items {
-                if seen.insert(s.clone()) { out.push(s); }
+                if seen.insert(s.clone()) {
+                    out.push(s);
+                }
             }
             return out;
         }
@@ -179,17 +192,27 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
                 if idx == u16::MAX {
                     if let Some(m) = base_re.find(&sl) {
                         let base = &sl[m.start()..m.end()];
-                        if let Some(bi) = index.get(base) { idx = *bi; }
+                        if let Some(bi) = index.get(base) {
+                            idx = *bi;
+                        }
                     }
                 }
                 let mut kind: u8 = 0;
                 let mut rank: u16 = 0;
                 if let Some(cap) = rc_re.captures(&sl) {
                     kind = 1;
-                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                    rank = cap
+                        .get(1)
+                        .and_then(|g| g.as_str().parse::<u16>().ok())
+                        .map(|n| u16::MAX - n)
+                        .unwrap_or(u16::MAX);
                 } else if let Some(cap) = pre_re.captures(&sl) {
                     kind = 2;
-                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                    rank = cap
+                        .get(1)
+                        .and_then(|g| g.as_str().parse::<u16>().ok())
+                        .map(|n| u16::MAX - n)
+                        .unwrap_or(u16::MAX);
                 } else if sl.contains("snapshot") {
                     kind = 3;
                 }
@@ -199,7 +222,9 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, _, _, s) in items {
-                if seen.insert(s.clone()) { out.push(s); }
+                if seen.insert(s.clone()) {
+                    out.push(s);
+                }
             }
             return out;
         }

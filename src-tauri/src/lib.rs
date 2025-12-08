@@ -16,8 +16,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             operations::update_dependency,
+            operations::apply_selected_version,
+            operations::list_versions,
             operations::get_project_options,
             operations::update_dependencies_batch,
+            operations::get_log_dir,
+            operations::apply_selected_versions_batch,
+            operations::get_batch_mod_briefs,
             operations::save_log
         ])
         .run(tauri::generate_context!())

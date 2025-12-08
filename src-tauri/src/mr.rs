@@ -3,6 +3,47 @@ use anyhow::{anyhow, Context};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
+struct MrProjectBrief {
+    title: String,
+    icon_url: Option<String>,
+}
+
+pub async fn get_mr_mod_brief(project_slug: &str) -> anyhow::Result<(String, Option<String>)> {
+    let client = crate::util::http_client()?;
+    let url = format!("https://api.modrinth.com/v2/project/{}", project_slug);
+    let resp = crate::util::send_with_retry(client.get(&url), 2)
+        .await
+        .context("Failed to connect to Modrinth API")?;
+    let status = resp.status();
+    let body_text = resp.text().await.context("Failed to read Modrinth response body")?;
+    if !status.is_success() {
+        log_event(
+            "error",
+            &format!(
+                "MR status {} url {} body {}",
+                status,
+                url,
+                shorten(&body_text, 400)
+            ),
+        );
+        return Err(anyhow!(format!(
+            "Modrinth API Error: {} body {}",
+            status,
+            shorten(&body_text, 400)
+        )));
+    }
+    let proj: MrProjectBrief = serde_json::from_str(&body_text).map_err(|e| {
+        anyhow!(format!(
+            "Modrinth parse error: {} body {}",
+            e,
+            shorten(&body_text, 400)
+        ))
+    })?;
+    log_event("info", &format!("mr_mod_brief {} {}", proj.title, proj.icon_url.clone().unwrap_or_default()));
+    Ok((proj.title, proj.icon_url))
+}
+
+#[derive(Deserialize, Debug)]
 pub struct MrVersion {
     pub id: String,
     pub version_number: String,
@@ -22,12 +63,9 @@ pub async fn get_latest_mr_version(
         "https://api.modrinth.com/v2/project/{}/version",
         project_slug
     );
-    let resp = crate::util::send_with_retry(
-        client.get(&url),
-        2,
-    )
-    .await
-    .context("Failed to connect to Modrinth API")?;
+    let resp = crate::util::send_with_retry(client.get(&url), 2)
+        .await
+        .context("Failed to connect to Modrinth API")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -84,12 +122,9 @@ pub async fn get_versions(project_slug: &str) -> anyhow::Result<Vec<MrVersion>> 
         "https://api.modrinth.com/v2/project/{}/version",
         project_slug
     );
-    let resp = crate::util::send_with_retry(
-        client.get(&url),
-        2,
-    )
-    .await
-    .context("Failed to connect to Modrinth API")?;
+    let resp = crate::util::send_with_retry(client.get(&url), 2)
+        .await
+        .context("Failed to connect to Modrinth API")?;
     let status = resp.status();
     let body_text = resp
         .text()

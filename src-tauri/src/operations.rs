@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Context};
-use serde_json::json;
-use tokio::fs;
-use std::path::Path;
 use futures::stream::{self, StreamExt};
+use serde::Serialize;
+use serde_json::json;
+use std::path::Path;
+use tokio::fs;
+use chrono::Local;
 
 use crate::cf::{get_cf_latest_indexes, get_latest_cf_file, get_project_meta};
 use crate::gradle::{
@@ -10,8 +12,157 @@ use crate::gradle::{
     update_or_insert_dependency, update_or_insert_dependency_mr,
 };
 use crate::mojang::{order_mc_versions, order_mc_versions_cf};
-use crate::mr::{get_latest_mr_version, get_versions};
-use crate::util::{app_data_dir};
+use crate::mr::{get_latest_mr_version, get_mr_mod_brief, get_versions};
+use crate::util::app_data_dir;
+
+#[derive(Serialize)]
+struct VersionChoice {
+    id: String,
+    label: String,
+    kind: String,
+}
+
+#[derive(Serialize)]
+struct BatchModBrief {
+    key: String,
+    name: String,
+    icon: String,
+    icon_data: String,
+}
+
+#[tauri::command]
+pub async fn list_versions(
+    source: String,
+    project_id: String,
+    mc_version: String,
+    loader: String,
+    cf_api_key: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let res = || async {
+        if source.to_lowercase() == "curseforge" {
+            let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
+            let pid = project_id
+                .parse::<u32>()
+                .context("Project ID must be a number for CurseForge")?;
+            if let Some(code) = crate::cf::cf_mod_loader_code_from_name(&loader) {
+                let mut files =
+                    crate::cf::get_cf_files_filtered(pid, &mc_version, code, &api_key).await?;
+                files.sort_by(|a, b| b.file_date.cmp(&a.file_date));
+                let mut choices: Vec<VersionChoice> = Vec::new();
+                for f in files {
+                    if !f.game_versions.iter().any(|v| v == &mc_version) {
+                        continue;
+                    }
+                    let level = crate::util::release_type_str(f.release_type);
+                    let name = crate::cf::strip_jar_suffix(&f.file_name);
+                    choices.push(VersionChoice {
+                        id: f.id.to_string(),
+                        label: format!("{} ({})", name, level),
+                        kind: level.to_string(),
+                    });
+                }
+                Ok(json!({"choices": choices}))
+            } else {
+                let indexes = get_cf_latest_indexes(pid, &api_key).await?;
+                let target_loader: String = crate::util::loader_name_to_tag(&loader);
+                let mut items: Vec<(u8, VersionChoice)> = Vec::new();
+                for idx in indexes {
+                    let tag = idx
+                        .mod_loader
+                        .map(|code| crate::cf::cf_mod_loader_to_tag(code))
+                        .unwrap_or("Unknown");
+                    if idx.game_version != mc_version || tag != target_loader.as_str() {
+                        continue;
+                    }
+                    let level = crate::util::release_type_str(idx.release_type);
+                    let name = crate::cf::strip_jar_suffix(&idx.filename);
+                    items.push((
+                        idx.release_type,
+                        VersionChoice {
+                            id: idx.file_id.to_string(),
+                            label: format!("{} ({})", name, level),
+                            kind: level.to_string(),
+                        },
+                    ));
+                }
+                items.sort_by(|a, b| a.0.cmp(&b.0));
+                let choices: Vec<VersionChoice> = items.into_iter().map(|(_, c)| c).collect();
+                Ok(json!({"choices": choices}))
+            }
+        } else if source.to_lowercase() == "modrinth" {
+            let mut versions = get_versions(&project_id).await?;
+            versions.sort_by(|a, b| b.date_published.cmp(&a.date_published));
+            let loader_lower = loader.to_lowercase();
+            let mut choices: Vec<VersionChoice> = Vec::new();
+            for v in versions.into_iter() {
+                if !v.game_versions.contains(&mc_version) {
+                    continue;
+                }
+                if !v.loaders.iter().any(|l| l.to_lowercase() == loader_lower) {
+                    continue;
+                }
+                choices.push(VersionChoice {
+                    id: v.id.clone(),
+                    label: format!("{} ({})", v.version_number, v.version_type),
+                    kind: v.version_type,
+                });
+            }
+            Ok(json!({"choices": choices}))
+        } else {
+            Err(anyhow!("Unknown source: {}", source))
+        }
+    };
+    res().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_batch_mod_briefs(
+    source: String,
+    items: Vec<String>,
+    cf_api_key: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let res = || async {
+        let mut mods: Vec<BatchModBrief> = Vec::new();
+        if source.to_lowercase() == "curseforge" {
+            let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
+            let tasks = items.into_iter().map(|it| {
+                let api_key = api_key.clone();
+                async move {
+                    let pid = it.parse::<u32>()?;
+                    let (name, icon_url) = crate::cf::get_cf_mod_brief(pid, &api_key).await?;
+                    let icon_path = if let Some(url) = icon_url { crate::util::cache_icon_from_url("cf", &pid.to_string(), &url).await? } else { String::new() };
+                    let icon_data = if icon_path.is_empty() { String::new() } else { crate::util::file_to_data_url(std::path::Path::new(&icon_path)).unwrap_or_default() };
+                    Ok::<BatchModBrief, anyhow::Error>(BatchModBrief { key: pid.to_string(), name, icon: icon_path, icon_data })
+                }
+            });
+            let mut stream = stream::iter(tasks).buffer_unordered(4);
+            while let Some(res) = stream.next().await {
+                match res {
+                    Ok(b) => mods.push(b),
+                    Err(e) => return Err(e),
+                }
+            }
+        } else if source.to_lowercase() == "modrinth" {
+            let tasks = items.into_iter().map(|slug| async move {
+                let (name, icon_url) = get_mr_mod_brief(&slug).await?;
+                let icon_path = if let Some(url) = icon_url { crate::util::cache_icon_from_url("mr", &slug, &url).await? } else { String::new() };
+                let icon_data = if icon_path.is_empty() { String::new() } else { crate::util::file_to_data_url(std::path::Path::new(&icon_path)).unwrap_or_default() };
+                Ok::<BatchModBrief, anyhow::Error>(BatchModBrief { key: slug, name, icon: icon_path, icon_data })
+            });
+            let mut stream = stream::iter(tasks).buffer_unordered(4);
+            while let Some(res) = stream.next().await {
+                match res {
+                    Ok(b) => mods.push(b),
+                    Err(e) => return Err(e),
+                }
+            }
+        } else {
+            return Err(anyhow!("Unknown source: {}", source));
+        }
+        Ok(json!({"mods": mods}))
+    };
+    res().await.map_err(|e| e.to_string())
+}
 
 async fn process_update(
     gradle_path: String,
@@ -25,20 +176,11 @@ async fn process_update(
     if !gradle_path.exists() {
         return Err(anyhow!("Build.gradle file not found at {:?}", gradle_path));
     }
-    let mut gradle_content =
-        fs::read_to_string(gradle_path).await.context("Could not read build.gradle")?;
+    let mut gradle_content = fs::read_to_string(gradle_path)
+        .await
+        .context("Could not read build.gradle")?;
     if source.to_lowercase() == "curseforge" {
-        let api_key = if let Some(key) = cf_api_key.as_deref() {
-            if key.trim().is_empty() {
-                std::env::var("CF_API_KEY").ok()
-            } else {
-                Some(key.to_string())
-            }
-        } else {
-            std::env::var("CF_API_KEY").ok()
-        };
-        let api_key = api_key
-            .ok_or_else(|| anyhow!("CF_API_KEY is required for CurseForge (Input or Env Var)"))?;
+        let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
         let pid = project_id
             .parse::<u32>()
             .context("Project ID must be a number for CurseForge")?;
@@ -61,7 +203,9 @@ async fn process_update(
         let dep_line = generate_dep(&loader, &slug, &modid_num.to_string(), file_id)?;
         gradle_content =
             update_or_insert_dependency(&gradle_content, &modid_num.to_string(), &dep_line);
-        fs::write(gradle_path, gradle_content).await.context("Failed to write build.gradle")?;
+        fs::write(gradle_path, gradle_content)
+            .await
+            .context("Failed to write build.gradle")?;
         Ok(format!(
             "{}✅ Updated Dependency: {}\n🎉 New Version: {} (File ID: {})",
             level_msg,
@@ -87,7 +231,9 @@ async fn process_update(
         gradle_content = ensure_modrinth_maven_repo(&gradle_content);
         let dep_line = generate_mr_dep(&loader, &project_id, &ver_id)?;
         gradle_content = update_or_insert_dependency_mr(&gradle_content, &project_id, &dep_line);
-        fs::write(gradle_path, gradle_content).await.context("Failed to write build.gradle")?;
+        fs::write(gradle_path, gradle_content)
+            .await
+            .context("Failed to write build.gradle")?;
         Ok(format!(
             "{}✅ Updated Dependency: {}\n🎉 New Version: {} (Version ID: {})",
             level_msg,
@@ -122,6 +268,65 @@ pub async fn update_dependency(
 }
 
 #[tauri::command]
+pub async fn apply_selected_version(
+    gradle_path: String,
+    source: String,
+    project_id: String,
+    loader: String,
+    selected_id: String,
+    cf_api_key: Option<String>,
+) -> Result<String, String> {
+    let res = || async {
+        let gradle_path_p = Path::new(&gradle_path);
+        if !gradle_path_p.exists() {
+            return Err(anyhow!(
+                "Build.gradle file not found at {:?}",
+                gradle_path_p
+            ));
+        }
+        let mut gradle_content = fs::read_to_string(gradle_path_p)
+            .await
+            .context("Could not read build.gradle")?;
+        if source.to_lowercase() == "curseforge" {
+            let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
+            let pid = project_id
+                .parse::<u32>()
+                .context("Project ID must be a number for CurseForge")?;
+            let (slug, modid_num) = get_project_meta(pid, &api_key).await?;
+            let file_id = selected_id
+                .parse::<u32>()
+                .context("Selected ID must be a number for CurseForge")?;
+            gradle_content = ensure_curse_maven_repo(&gradle_content);
+            let dep_line = generate_dep(&loader, &slug, &modid_num.to_string(), file_id)?;
+            gradle_content =
+                update_or_insert_dependency(&gradle_content, &modid_num.to_string(), &dep_line);
+            fs::write(gradle_path_p, gradle_content)
+                .await
+                .context("Failed to write build.gradle")?;
+            Ok(format!(
+                "✅ Updated Dependency: {}\n🎉 Applied File ID: {}",
+                dep_line, file_id
+            ))
+        } else if source.to_lowercase() == "modrinth" {
+            gradle_content = ensure_modrinth_maven_repo(&gradle_content);
+            let dep_line = generate_mr_dep(&loader, &project_id, &selected_id)?;
+            gradle_content =
+                update_or_insert_dependency_mr(&gradle_content, &project_id, &dep_line);
+            fs::write(gradle_path_p, gradle_content)
+                .await
+                .context("Failed to write build.gradle")?;
+            Ok(format!(
+                "✅ Updated Dependency: {}\n🎉 Applied Version ID: {}",
+                dep_line, selected_id
+            ))
+        } else {
+            Err(anyhow!("Unknown source: {}", source))
+        }
+    };
+    res().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_project_options(
     source: String,
     project_id: String,
@@ -129,18 +334,7 @@ pub async fn get_project_options(
 ) -> Result<serde_json::Value, String> {
     let res = || async {
         if source.to_lowercase() == "curseforge" {
-            let api_key = if let Some(key) = cf_api_key.as_deref() {
-                if key.trim().is_empty() {
-                    std::env::var("CF_API_KEY").ok()
-                } else {
-                    Some(key.to_string())
-                }
-            } else {
-                std::env::var("CF_API_KEY").ok()
-            };
-            let api_key = api_key.ok_or_else(|| {
-                anyhow!("CF_API_KEY is required for CurseForge (Input or Env Var)")
-            })?;
+            let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
             let pid = project_id
                 .parse::<u32>()
                 .context("Project ID must be a number for CurseForge")?;
@@ -243,27 +437,23 @@ pub async fn update_dependencies_batch(
     loader: String,
     cf_api_key: Option<String>,
 ) -> Result<String, String> {
-    let limit = 4usize;
-    let gradle_path_c = gradle_path.clone();
-    let source_c = source.clone();
-    let mc_version_c = mc_version.clone();
-    let loader_c = loader.clone();
-    let cf_api_key_c = cf_api_key.clone();
-    let s = stream::iter(items.into_iter().map(|item| {
-        let gradle_path = gradle_path_c.clone();
-        let source = source_c.clone();
-        let mc_version = mc_version_c.clone();
-        let loader = loader_c.clone();
-        let cf_api_key = cf_api_key_c.clone();
-        async move {
-            match process_update(gradle_path, item.clone(), mc_version, loader, source, cf_api_key).await {
-                Ok(res) => format!("\n[{}] {}\n", item, res),
-                Err(err) => format!("\n[{}] ❌ {}\n", item, err),
-            }
+    let mut out = String::new();
+    for item in items.into_iter() {
+        match process_update(
+            gradle_path.clone(),
+            item.clone(),
+            mc_version.clone(),
+            loader.clone(),
+            source.clone(),
+            cf_api_key.clone(),
+        )
+        .await
+        {
+            Ok(res) => out.push_str(&format!("\n[{}] {}\n", item, res)),
+            Err(err) => out.push_str(&format!("\n[{}] ❌ {}\n", item, err)),
         }
-    }));
-    let results = s.buffer_unordered(limit).collect::<Vec<_>>().await;
-    Ok(results.into_iter().collect())
+    }
+    Ok(out)
 }
 
 #[tauri::command]
@@ -272,11 +462,80 @@ pub async fn save_log(content: String) -> Result<String, String> {
     if let Err(e) = std::fs::create_dir_all(&base) {
         return Err(e.to_string());
     }
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_millis();
+    let ts = Local::now().format("%Y%m%d-%H%M%S").to_string();
     let path = base.join(format!("log-{}.txt", ts));
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    let backend_path = base.join("runtime.log");
+    let backend_content = std::fs::read_to_string(&backend_path).unwrap_or_default();
+    let combined = format!("[FRONTEND]\n{}\n\n[BACKEND]\n{}\n", content, backend_content);
+    std::fs::write(&path, combined).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into())
+}
+
+#[tauri::command]
+pub async fn get_log_dir() -> Result<String, String> {
+    let base = app_data_dir().join("logs");
+    if let Err(e) = std::fs::create_dir_all(&base) {
+        return Err(e.to_string());
+    }
+    Ok(base.to_string_lossy().into())
+}
+
+#[tauri::command]
+pub async fn apply_selected_versions_batch(
+    gradle_path: String,
+    source: String,
+    selections: Vec<(String, String)>,
+    loader: String,
+    cf_api_key: Option<String>,
+) -> Result<String, String> {
+    let res = || async {
+        let gradle_path_p = Path::new(&gradle_path);
+        if !gradle_path_p.exists() {
+            return Err(anyhow!(format!("Build.gradle file not found at {:?}", gradle_path_p)));
+        }
+        let mut gradle_content = fs::read_to_string(gradle_path_p)
+            .await
+            .context("Could not read build.gradle")?;
+        let mut summary = String::new();
+
+        if source.to_lowercase() == "curseforge" {
+            let api_key = crate::util::resolve_cf_api_key(cf_api_key.clone())?;
+            gradle_content = ensure_curse_maven_repo(&gradle_content);
+            for (pid_s, selected_id_s) in selections.iter() {
+                let pid = pid_s
+                    .parse::<u32>()
+                    .context("Project ID must be a number for CurseForge")?;
+                let file_id = selected_id_s
+                    .parse::<u32>()
+                    .context("Selected ID must be a number for CurseForge")?;
+                let (slug, modid_num) = get_project_meta(pid, &api_key).await?;
+                let dep_line = generate_dep(&loader, &slug, &modid_num.to_string(), file_id)?;
+                gradle_content =
+                    update_or_insert_dependency(&gradle_content, &modid_num.to_string(), &dep_line);
+                summary.push_str(&format!(
+                    "✅ {} → File ID: {}\n",
+                    dep_line, file_id
+                ));
+            }
+        } else if source.to_lowercase() == "modrinth" {
+            gradle_content = ensure_modrinth_maven_repo(&gradle_content);
+            for (slug, ver_id) in selections.iter() {
+                let dep_line = generate_mr_dep(&loader, slug, ver_id)?;
+                gradle_content =
+                    update_or_insert_dependency_mr(&gradle_content, slug, &dep_line);
+                summary.push_str(&format!(
+                    "✅ {} → Version ID: {}\n",
+                    dep_line, ver_id
+                ));
+            }
+        } else {
+            return Err(anyhow!("Unknown source: {}", source));
+        }
+
+        fs::write(gradle_path_p, gradle_content)
+            .await
+            .context("Failed to write build.gradle")?;
+        Ok(summary)
+    };
+    res().await.map_err(|e| e.to_string())
 }

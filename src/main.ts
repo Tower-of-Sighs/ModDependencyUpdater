@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { openPath as openExternal } from "@tauri-apps/plugin-opener";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
  
@@ -29,6 +30,13 @@ const mcVersionInput = document.getElementById("mc-version-input") as HTMLInputE
 const loaderInput = document.getElementById("loader-input") as HTMLInputElement;
 const clearLogBtn = document.getElementById("clear-log-btn") as HTMLButtonElement;
 const saveLogBtn = document.getElementById("save-log-btn") as HTMLButtonElement;
+const versionModal = document.getElementById("version-modal") as HTMLDivElement;
+const versionList = document.getElementById("version-list") as HTMLDivElement;
+const modStrip = document.getElementById("mod-strip") as HTMLDivElement;
+const versionApplyAllBtn = document.getElementById("version-apply-all") as HTMLButtonElement;
+const versionApplyBtn = document.getElementById("version-apply") as HTMLButtonElement;
+const versionCancelBtn = document.getElementById("version-cancel") as HTMLButtonElement;
+const openLogBtn = document.getElementById("open-log-btn") as HTMLButtonElement;
 
 type ProjectOptions = {
   versions: string[];
@@ -44,6 +52,12 @@ let versionToLoaders: Record<string, string[]> = {};
 let loaderToVersions: Record<string, string[]> = {};
 let allVersions: string[] = [];
 let allLoaders: string[] = [];
+
+function t(key: string, fallback: string, params?: Record<string, string | number>) {
+  const raw = currentDict[key] || fallback;
+  if (!params) return raw;
+  return Object.keys(params).reduce((acc, k) => acc.replace(new RegExp(`\\{${k}\\}`, "g"), String(params[k])), raw);
+}
 
 async function applyI18n(lang: string) {
   const langKey = lang === "zh-CN" ? "zh-CN" : "en";
@@ -136,7 +150,7 @@ function setOptions(select: HTMLSelectElement, values: string[]) {
 
 async function fetchProjectOptions() {
   if (!isTauriReady()) {
-    log("❌ Tauri 未就绪：无法解析项目信息", true);
+    log(t("log_tauri_not_ready_options", "Tauri not ready: cannot fetch project options"), true);
     return;
   }
   if (modeSelect.value === "batch") {
@@ -146,7 +160,7 @@ async function fetchProjectOptions() {
   const projectId = projectIdInput.value.trim();
   const cfApiKey = cfApiKeyInput.value.trim();
   if (!projectId) {
-    log("❌ 请先填写工程标识", true);
+    log(t("log_missing_project_id", "Please enter a Project ID."), true);
     return;
   }
   try {
@@ -164,9 +178,9 @@ async function fetchProjectOptions() {
     setOptions(mcVersionSelect, versions);
     setOptions(loaderSelect, loaders);
     saveState();
-    log(`✅ 已解析可选项：版本 ${versions.length}，加载器 ${loaders.length}`);
+    log(t("log_parsed_options", "Parsed options: versions {v}, loaders {l}", { v: versions.length, l: loaders.length }));
   } catch (err) {
-    log(`❌ 解析失败: ${err}`, true);
+    log(t("log_parse_failed", "Parse failed: {err}", { err: String(err) }), true);
   }
 }
 
@@ -207,7 +221,8 @@ function bindEvents() {
       mcVersionSelect.value = ver;
     }
     saveState();
-    log(`🔄 版本选择: ${ver} → 加载器候选: ${targetLoaders.length}，版本候选: ${targetVersions.length}`);
+    
+    log(t("log_version_change", "Version: {ver} → loaders {lc}, versions {vc}", { ver, lc: targetLoaders.length, vc: targetVersions.length }));
   });
   if (loaderSelect) loaderSelect.addEventListener("change", () => {
     const loader = loaderSelect.value;
@@ -229,11 +244,11 @@ function bindEvents() {
       loaderSelect.value = loader;
     }
     saveState();
-    log(`🔄 加载器选择: ${loader} → 版本候选: ${targetVersions.length}，加载器候选: ${targetLoaders.length}`);
+    log(t("log_loader_change", "Loader changed: {loader}", { loader }));
   });
   if (browseBtn) browseBtn.addEventListener("click", async () => {
     if (!isTauriReady()) {
-      log("❌ Tauri 未就绪：无法打开系统文件选择器", true);
+      log(t("log_tauri_not_ready_open", "Tauri not ready: cannot open file dialog"), true);
       return;
     }
     try {
@@ -253,25 +268,35 @@ function bindEvents() {
         clearOptions();
       }
     } catch (err) {
-      log(`Error selecting file: ${err}`, true);
+      log(t("log_select_file_error", "Error selecting file: {err}", { err: String(err) }), true);
     }
   });
   if (clearLogBtn) clearLogBtn.addEventListener("click", () => { logOutput.textContent = ""; });
   if (saveLogBtn) saveLogBtn.addEventListener("click", async () => {
-    if (!isTauriReady()) { log("❌ Tauri 未就绪：无法保存日志", true); return; }
+    if (!isTauriReady()) { log(t("log_tauri_not_ready_save_log", "Tauri not ready: cannot save log"), true); return; }
     try {
       const path = await invoke<string>("save_log", { content: logOutput.textContent || "" });
-      log(`✅ 已保存日志: ${path}`);
+      log(t("log_saved_log", "Saved log: {path}", { path }));
     } catch (err) {
-      log(`❌ 保存失败: ${err}`, true);
+      log(t("log_save_failed", "Save failed: {err}", { err: String(err) }), true);
+    }
+  });
+  if (openLogBtn) openLogBtn.addEventListener("click", async () => {
+    if (!isTauriReady()) { log(t("log_tauri_not_ready_invoke", "Tauri not ready: cannot invoke backend commands"), true); return; }
+    try {
+      const dir = await invoke<string>("get_log_dir");
+      await openExternal(dir);
+      log(t("log_open_logs_dir", "Opened logs folder: {dir}", { dir }));
+    } catch (err) {
+      log(t("log_open_logs_failed", "Open logs folder failed: {err}", { err: String(err) }), true);
     }
   });
   if (updateBtn) updateBtn.addEventListener("click", async () => {
     if (!isTauriReady()) {
-      log("❌ Tauri 未就绪：无法调用后端命令", true);
+      log(t("log_tauri_not_ready_invoke", "Tauri not ready: cannot invoke backend commands"), true);
       return;
     }
-    log("Running update...", false);
+    log(t("log_running_update", "Running update..."), false);
     const gradlePath = gradlePathInput.value.trim();
     const source = sourceSelect.value;
     const projectId = projectIdInput.value.trim();
@@ -280,53 +305,225 @@ function bindEvents() {
     const loader = isBatch ? loaderInput.value.trim() : loaderSelect.value;
     const cfApiKey = cfApiKeyInput.value.trim();
     if (!gradlePath) {
-      log("❌ Please select a build.gradle file.", true);
+      log(t("log_select_gradle", "Please select a build.gradle file."), true);
       return;
     }
     if (!isBatch && !projectId) {
-      log("❌ Please enter a Project ID.", true);
+      log(t("log_enter_project_id", "Please enter a Project ID."), true);
       return;
     }
     if (isBatch && (!mcVersion || !loader)) {
-      log("❌ 批量模式下需要填写版本和加载器", true);
+      log(t("log_batch_need_fields", "In batch mode, please fill version and loader"), true);
       return;
     }
     if (source === "curseforge" && !cfApiKey) {
-      log("⚠ Warning: No API Key provided. If not set in environment variables, this will fail.", false);
+      log(t("log_no_api_key_warning", "Warning: No API Key provided. If not set in environment variables, this will fail."), false);
     }
     saveState();
     try {
       if (!isBatch) {
-        const result = await invoke<string>("update_dependency", {
-          gradlePath,
+        const res = await invoke<{ choices: { id: string; label: string; kind: string }[] }>("list_versions", {
+          source,
           projectId,
           mcVersion,
           loader,
-          source,
-          cfApiKey: cfApiKey || null,
+          cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
         });
-        log(result);
+        const choices = res.choices || [];
+        if (choices.length === 0) { log(t("log_no_versions_found", "No matching versions found"), true); return; }
+        versionList.innerHTML = "";
+        choices.forEach((c, idx) => {
+          const item = document.createElement("div");
+          item.className = "version-item";
+          const id = `ver-${idx}`;
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = "version-choice";
+          radio.value = c.id;
+          radio.id = id;
+          if (idx === 0) radio.checked = true;
+          const label = document.createElement("label");
+          label.htmlFor = id;
+          label.textContent = c.label;
+          item.appendChild(radio);
+          item.appendChild(label);
+          versionList.appendChild(item);
+        });
+        versionModal.style.display = "flex";
+        const applyHandler = async () => {
+          const sel = document.querySelector<HTMLInputElement>('input[name="version-choice"]:checked');
+          if (!sel) { log(t("log_please_select_version", "Please select a version"), true); return; }
+          versionApplyBtn.disabled = true;
+          try {
+            const result = await invoke<string>("apply_selected_version", {
+              gradlePath,
+              source,
+              projectId,
+              loader,
+              selectedId: sel.value,
+              cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
+            });
+            log(result);
+            versionModal.style.display = "none";
+          } catch (err) {
+            log(t("log_apply_failed", "Apply failed: {err}", { err: String(err) }), true);
+          } finally {
+            versionApplyBtn.disabled = false;
+            versionApplyBtn.removeEventListener("click", applyHandler);
+            versionCancelBtn.removeEventListener("click", cancelHandler);
+          }
+        };
+        const cancelHandler = () => {
+          versionModal.style.display = "none";
+          versionApplyBtn.removeEventListener("click", applyHandler);
+          versionCancelBtn.removeEventListener("click", cancelHandler);
+        };
+        versionApplyBtn.addEventListener("click", applyHandler);
+        versionCancelBtn.addEventListener("click", cancelHandler);
       } else {
         const items = batchItems.value
           .split(/\r?\n/)
           .map(s => s.trim())
           .filter(Boolean);
         if (items.length === 0) {
-          log("❌ 请在批量模式下输入项目列表", true);
+          log(t("log_batch_enter_projects", "Enter project list in batch mode"), true);
           return;
         }
-        const result = await invoke<string>("update_dependencies_batch", {
-          gradlePath,
-          source,
-          items,
-          mcVersion,
-          loader,
-          cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
-        });
-        log(result);
+        try {
+          const t0 = performance.now();
+          const briefs = await invoke<{ mods: { key: string; name: string; icon: string; icon_data: string }[] }>("get_batch_mod_briefs", {
+            source,
+            items,
+            cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
+          });
+          modStrip.innerHTML = "";
+          versionList.innerHTML = "";
+          let currentKey = "";
+          const versionsCache: Record<string, { id: string; label: string; kind: string }[]> = {};
+          const selectedVersionByMod: Record<string, string> = {};
+          const mods = briefs.mods || [];
+          const toUrl = (dataUrl: string, p: string) => {
+            if (dataUrl) return dataUrl;
+            if (!p) return "/src/assets/app-icon.ico";
+            if (/^https?:/i.test(p)) return p;
+            const normalized = p.replace(/\\/g, "/");
+            return convertFileSrc(normalized);
+          };
+          const renderChoices = (key: string, choices: { id: string; label: string; kind: string }[]) => {
+            versionList.innerHTML = "";
+            choices.forEach((c, idx) => {
+              const id = `ver-${key}-${idx}`;
+              const item = document.createElement("div");
+              item.className = "version-item";
+              const radio = document.createElement("input");
+              radio.type = "radio";
+              radio.name = "version-choice";
+              radio.value = c.id;
+              radio.id = id;
+              radio.checked = selectedVersionByMod[key] ? (selectedVersionByMod[key] === c.id) : (idx === 0);
+              radio.addEventListener("change", () => { selectedVersionByMod[key] = c.id; });
+              const label = document.createElement("label");
+              label.htmlFor = id;
+              label.textContent = c.label;
+              item.appendChild(radio);
+              item.appendChild(label);
+              versionList.appendChild(item);
+            });
+          };
+          mods.forEach((m, idx) => {
+            const card = document.createElement("div");
+            card.className = "mod-card";
+            const img = document.createElement("img");
+            img.loading = "lazy";
+            img.src = toUrl(m.icon_data, m.icon);
+            const span = document.createElement("div");
+            span.className = "label";
+            span.textContent = m.name || m.key;
+            card.appendChild(img);
+            card.appendChild(span);
+            card.addEventListener("click", async () => {
+              document.querySelectorAll(".mod-card").forEach(el => el.classList.remove("active"));
+              card.classList.add("active");
+              currentKey = m.key;
+              let choices = versionsCache[m.key];
+              if (!choices) {
+                versionList.textContent = t("log_loading", "Loading...");
+                const t1 = performance.now();
+                try {
+                  const res = await invoke<{ choices: { id: string; label: string; kind: string }[] }>("list_versions", {
+                    source,
+                    projectId: m.key,
+                    mcVersion,
+                    loader,
+                    cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
+                  });
+                  choices = res.choices || [];
+                  versionsCache[m.key] = choices;
+                  log(t("log_versions_loaded", "Versions for {key} loaded in {ms}ms (count {n})", { key: m.key, ms: Math.round(performance.now() - t1), n: choices.length }));
+                } catch (err) {
+                  log(t("log_parse_failed", "Parse failed: {err}", { err: String(err) }), true);
+                  return;
+                }
+              }
+              renderChoices(m.key, choices);
+            });
+            modStrip.appendChild(card);
+            if (idx === 0) { card.classList.add("active"); currentKey = m.key; }
+          });
+          versionModal.style.display = "flex";
+          log(t("log_batch_modal_show", "Showing batch modal: {n} mods", { n: mods.length }));
+          const firstCard = modStrip.querySelector(".mod-card") as HTMLDivElement | null;
+          firstCard?.dispatchEvent(new Event("click"));
+          log(t("log_batch_modal_ready", "Batch modal ready in {ms}ms", { ms: Math.round(performance.now() - t0) }));
+          versionApplyBtn.onclick = async () => {
+            const sel = document.querySelector<HTMLInputElement>('input[name="version-choice"]:checked');
+            if (!sel || !currentKey) { log(t("log_please_select_version", "Please select a version"), true); return; }
+            versionApplyBtn.disabled = true;
+            try {
+              const result = await invoke<string>("apply_selected_version", {
+                gradlePath,
+                source,
+                projectId: currentKey,
+                loader,
+                selectedId: sel.value,
+                cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
+              });
+              log(result);
+              versionModal.style.display = "none";
+            } catch (err) {
+              log(t("log_apply_failed", "Apply failed: {err}", { err: String(err) }), true);
+            } finally {
+              versionApplyBtn.disabled = false;
+            }
+          };
+          versionCancelBtn.onclick = () => { versionModal.style.display = "none"; };
+          if (versionApplyAllBtn) versionApplyAllBtn.onclick = async () => {
+            const pairs: Array<[string, string]> = [];
+            Object.entries(selectedVersionByMod).forEach(([k, v]) => { if (v) pairs.push([k, v]); });
+            if (pairs.length === 0) { log(t("log_please_select_version", "Please select a version"), true); return; }
+            versionApplyAllBtn.disabled = true;
+            try {
+              const result = await invoke<string>("apply_selected_versions_batch", {
+                gradlePath,
+                source,
+                selections: pairs,
+                loader,
+                cfApiKey: source === "curseforge" ? (cfApiKey || null) : null,
+              });
+              log(result);
+              versionModal.style.display = "none";
+            } catch (err) {
+              log(t("log_apply_failed", "Apply failed: {err}", { err: String(err) }), true);
+            } finally {
+              versionApplyAllBtn.disabled = false;
+            }
+          };
+        } catch (err) {
+          log(t("log_error", "Error: {err}", { err: String(err) }), true);
+        }
       }
     } catch (err) {
-      log(`❌ Error: ${err}`, true);
+      log(t("log_error", "Error: {err}", { err: String(err) }), true);
     }
   });
 }
@@ -353,7 +550,8 @@ async function init() {
   await waitDom();
   await waitTauri();
   loadState();
-  await applyI18n(langSelect.value || navigator.language);
+  langSelect.value = "en";
+  await applyI18n("en");
   updateUIState();
   bindEvents();
   try {

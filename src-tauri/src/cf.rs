@@ -1,9 +1,10 @@
 use crate::util::{log_event, shorten};
 use anyhow::{anyhow, Context};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
-use once_cell::sync::Lazy;
-static VERSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+(?:\.\d+)*(?:[-+][a-zA-Z0-9_.-]+)?").unwrap());
+static VERSION_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\d+(?:\.\d+)*(?:[-+][a-zA-Z0-9_.-]+)?").unwrap());
 
 #[derive(Deserialize, Debug)]
 struct CfModResponse {
@@ -28,11 +29,21 @@ pub struct CfLatestFileIndex {
 struct CfModData {
     id: u32,
     slug: String,
+    name: String,
+    logo: CfLogo,
     #[serde(rename = "latestFilesIndexes")]
     latest_files_indexes: Vec<CfLatestFileIndex>,
 }
 
-fn extract_version(text: &str) -> Option<String> {
+#[derive(Deserialize, Debug)]
+struct CfLogo {
+    #[serde(rename = "url")]
+    url: String,
+    #[serde(rename = "thumbnailUrl")]
+    thumbnail_url: Option<String>,
+}
+
+pub fn extract_version(text: &str) -> Option<String> {
     for cap in VERSION_RE.captures_iter(text) {
         let m = cap.get(0)?.as_str();
         if m.contains('.') {
@@ -40,6 +51,62 @@ fn extract_version(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+pub fn strip_jar_suffix(name: &str) -> String {
+    let lower = name.to_lowercase();
+    if lower.ends_with(".jar") {
+        name[..name.len().saturating_sub(4)].to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+pub async fn get_cf_mod_brief(project_id: u32, api_key: &str) -> anyhow::Result<(String, Option<String>)> {
+    let client = crate::util::http_client()?;
+    let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
+    let resp = crate::util::send_with_retry(
+        client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("Accept", "application/json"),
+        2,
+    )
+    .await
+    .context("Failed to fetch mod detail from CurseForge")?;
+    let status = resp.status();
+    let body_text = resp.text().await.context("Failed to read mod detail body")?;
+    if !status.is_success() {
+        crate::util::log_event(
+            "error",
+            &format!(
+                "CF detail status {} url {} body {}",
+                status,
+                url,
+                crate::util::shorten(&body_text, 400)
+            ),
+        );
+        return Err(anyhow!(format!(
+            "CurseForge API Error (Mod Detail): {} body {}",
+            status,
+            crate::util::shorten(&body_text, 400)
+        )));
+    }
+    let body: CfModResponse = serde_json::from_str(&body_text).map_err(|e| {
+        anyhow!(format!(
+            "CurseForge parse error: {} body {}",
+            e,
+            crate::util::shorten(&body_text, 400)
+        ))
+    })?;
+    let icon = body
+        .data
+        .logo
+        .thumbnail_url
+        .clone()
+        .or(Some(body.data.logo.url.clone()));
+    log_event("info", &format!("cf_mod_brief {} {}", body.data.name, icon.clone().unwrap_or_default()));
+    Ok((body.data.name, icon))
 }
 
 pub async fn get_project_meta(project_id: u32, api_key: &str) -> anyhow::Result<(String, u32)> {
@@ -130,27 +197,7 @@ pub async fn get_latest_cf_file(
             shorten(&body_text, 400)
         ))
     })?;
-    let loader_tag = match loader.to_lowercase().as_str() {
-        "forge" => "Forge",
-        "neoforge" => "NeoForge",
-        "fabric" => "Fabric",
-        "quilt" => "Quilt",
-        _ => loader,
-    };
-    let loader_tag_fallback = if !["Forge", "NeoForge", "Fabric"].contains(&loader_tag) {
-        let mut chars = loader.chars();
-        match chars.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
-        }
-    } else {
-        loader_tag.to_string()
-    };
-    let target_loader = if ["Forge", "NeoForge", "Fabric"].contains(&loader_tag) {
-        loader_tag
-    } else {
-        &loader_tag_fallback
-    };
+    let target_loader = crate::util::loader_name_to_tag(&loader);
     for release_type in [1u8, 2, 3] {
         for idx in &body.data.latest_files_indexes {
             let tag = idx
@@ -160,7 +207,7 @@ pub async fn get_latest_cf_file(
             if idx.release_type != release_type {
                 continue;
             }
-            if idx.game_version == mc_version && tag == target_loader {
+            if idx.game_version == mc_version && tag == target_loader.as_str() {
                 let version =
                     extract_version(&idx.filename).unwrap_or_else(|| idx.file_id.to_string());
                 return Ok((Some(idx.file_id), Some(version), Some(idx.release_type)));
@@ -226,4 +273,83 @@ pub async fn get_cf_latest_indexes(
         ))
     })?;
     Ok(body.data.latest_files_indexes)
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CfFileItem {
+    #[serde(rename = "id")]
+    pub id: u32,
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    #[serde(rename = "fileName")]
+    pub file_name: String,
+    #[serde(rename = "fileDate")]
+    pub file_date: String,
+    #[serde(rename = "releaseType")]
+    pub release_type: u8,
+    #[serde(rename = "gameVersions")]
+    pub game_versions: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct CfFilesResponse {
+    data: Vec<CfFileItem>,
+}
+
+pub fn cf_mod_loader_code_from_name(name: &str) -> Option<u8> {
+    match name.to_lowercase().as_str() {
+        "forge" => Some(1),
+        "neoforge" => Some(6),
+        "fabric" => Some(4),
+        "quilt" => Some(5),
+        _ => None,
+    }
+}
+
+pub async fn get_cf_files_filtered(
+    project_id: u32,
+    mc_version: &str,
+    loader_code: u8,
+    api_key: &str,
+) -> anyhow::Result<Vec<CfFileItem>> {
+    let client = crate::util::http_client()?;
+    let url = format!(
+        "https://api.curseforge.com/v1/mods/{}/files?gameVersion={}&modLoaderType={}&pageSize=50",
+        project_id, mc_version, loader_code
+    );
+    let resp = crate::util::send_with_retry(
+        client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("Accept", "application/json"),
+        2,
+    )
+    .await
+    .context("Failed to fetch mod files from CurseForge")?;
+    let status = resp.status();
+    let body_text = resp.text().await.context("Failed to read mod files body")?;
+    if !status.is_success() {
+        log_event(
+            "error",
+            &format!(
+                "CF files status {} url {} body {}",
+                status,
+                url,
+                shorten(&body_text, 400)
+            ),
+        );
+        return Err(anyhow!(format!(
+            "CurseForge API Error (Mod Files): {} body {}",
+            status,
+            shorten(&body_text, 400)
+        )));
+    }
+    let body: CfFilesResponse = serde_json::from_str(&body_text).map_err(|e| {
+        anyhow!(format!(
+            "CurseForge files parse error: {} body {}",
+            e,
+            shorten(&body_text, 400)
+        ))
+    })?;
+    Ok(body.data)
 }
