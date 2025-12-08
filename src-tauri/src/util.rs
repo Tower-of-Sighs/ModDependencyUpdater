@@ -8,11 +8,38 @@ pub fn app_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("ModDependencyUpdater"))
 }
 
-pub fn http_client() -> Result<reqwest::Client> {
-    let client = reqwest::Client::builder()
+use once_cell::sync::Lazy;
+use anyhow::anyhow;
+use tokio::time::{sleep, Duration};
+static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
         .user_agent("ModDependencyUpdater/1.0 (Tauri)")
-        .build()?;
-    Ok(client)
+        .pool_idle_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("http client")
+});
+pub fn http_client() -> Result<reqwest::Client> {
+    Ok(CLIENT.clone())
+}
+
+pub async fn send_with_retry(rb: reqwest::RequestBuilder, retries: usize) -> anyhow::Result<reqwest::Response> {
+    let mut last_err: Option<reqwest::Error> = None;
+    for attempt in 0..=retries {
+        let cloned = rb
+            .try_clone()
+            .ok_or_else(|| anyhow!("cannot clone request"))?;
+        match cloned.send().await {
+            Ok(resp) => return Ok(resp),
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < retries {
+                    sleep(Duration::from_millis(200 * (1 << attempt))).await;
+                }
+            }
+        }
+    }
+    Err(anyhow!(last_err.unwrap()))
 }
 
 pub fn log_event(level: &str, msg: &str) {

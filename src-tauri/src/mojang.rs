@@ -7,6 +7,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::util::{app_data_dir, log_event, shorten};
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
+static MOJANG_INDEX: Lazy<RwLock<HashMap<String, u16>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static BASE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d+(?:\.\d+)+").unwrap());
+static RC_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)-rc(\d+)").unwrap());
+static PRE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)-pre(\d+)").unwrap());
 
 #[derive(Deserialize)]
 struct MojangVersion {
@@ -27,11 +33,12 @@ fn cache_file() -> PathBuf {
 pub async fn refresh_manifest_cache_on_startup() -> anyhow::Result<()> {
     let client = crate::util::http_client()?;
     let url = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .context("Failed to fetch Mojang manifest")?;
+    let resp = crate::util::send_with_retry(
+        client.get(url),
+        2
+    )
+    .await
+    .context("Failed to fetch Mojang manifest")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -66,12 +73,32 @@ pub async fn refresh_manifest_cache_on_startup() -> anyhow::Result<()> {
             map.insert(v.id, i as u16);
         }
     }
+    {
+        let mut w = MOJANG_INDEX.write().unwrap();
+        *w = map.clone();
+    }
     let data = serialize(&map)?;
     fs::write(cache_file(), data).context("Failed to write manifest cache")?;
     Ok(())
 }
 
 pub fn order_mc_versions(input: Vec<String>) -> Vec<String> {
+    {
+        let index = MOJANG_INDEX.read().unwrap();
+        if !index.is_empty() {
+            let mut items: Vec<(u16, String)> = input
+                .into_iter()
+                .map(|s| (index.get(&s).copied().unwrap_or(u16::MAX), s))
+                .collect();
+            items.sort_by(|a, b| a.0.cmp(&b.0));
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut out = Vec::new();
+            for (_, s) in items {
+                if seen.insert(s.clone()) { out.push(s); }
+            }
+            return out;
+        }
+    }
     let path = cache_file();
     let raw = fs::read(path);
     if let Ok(bytes) = raw {
@@ -84,9 +111,7 @@ pub fn order_mc_versions(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, s) in items {
-                if seen.insert(s.clone()) {
-                    out.push(s);
-                }
+                if seen.insert(s.clone()) { out.push(s); }
             }
             return out;
         }
@@ -102,13 +127,12 @@ pub fn order_mc_versions(input: Vec<String>) -> Vec<String> {
 }
 
 pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
-    let path = cache_file();
-    let raw = fs::read(path);
-    if let Ok(bytes) = raw {
-        if let Ok(index) = deserialize::<HashMap<String, u16>>(&bytes) {
-            let base_re = Regex::new(r"^\d+(?:\.\d+)+").unwrap();
-            let rc_re = Regex::new(r"(?i)-rc(\d+)").unwrap();
-            let pre_re = Regex::new(r"(?i)-pre(\d+)").unwrap();
+    {
+        let index = MOJANG_INDEX.read().unwrap();
+        if !index.is_empty() {
+            let base_re = &BASE_RE;
+            let rc_re = &RC_RE;
+            let pre_re = &PRE_RE;
             let mut items: Vec<(u16, u8, u16, String)> = Vec::new();
             for s in input {
                 let sl = s.to_lowercase();
@@ -116,27 +140,17 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
                 if idx == u16::MAX {
                     if let Some(m) = base_re.find(&sl) {
                         let base = &sl[m.start()..m.end()];
-                        if let Some(bi) = index.get(base) {
-                            idx = *bi;
-                        }
+                        if let Some(bi) = index.get(base) { idx = *bi; }
                     }
                 }
                 let mut kind: u8 = 0;
                 let mut rank: u16 = 0;
                 if let Some(cap) = rc_re.captures(&sl) {
                     kind = 1;
-                    rank = cap
-                        .get(1)
-                        .and_then(|g| g.as_str().parse::<u16>().ok())
-                        .map(|n| u16::MAX - n)
-                        .unwrap_or(u16::MAX);
+                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
                 } else if let Some(cap) = pre_re.captures(&sl) {
                     kind = 2;
-                    rank = cap
-                        .get(1)
-                        .and_then(|g| g.as_str().parse::<u16>().ok())
-                        .map(|n| u16::MAX - n)
-                        .unwrap_or(u16::MAX);
+                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
                 } else if sl.contains("snapshot") {
                     kind = 3;
                 }
@@ -146,9 +160,46 @@ pub fn order_mc_versions_cf(input: Vec<String>) -> Vec<String> {
             let mut seen: HashSet<String> = HashSet::new();
             let mut out = Vec::new();
             for (_, _, _, s) in items {
-                if seen.insert(s.clone()) {
-                    out.push(s);
+                if seen.insert(s.clone()) { out.push(s); }
+            }
+            return out;
+        }
+    }
+    let path = cache_file();
+    let raw = fs::read(path);
+    if let Ok(bytes) = raw {
+        if let Ok(index) = deserialize::<HashMap<String, u16>>(&bytes) {
+            let base_re = &BASE_RE;
+            let rc_re = &RC_RE;
+            let pre_re = &PRE_RE;
+            let mut items: Vec<(u16, u8, u16, String)> = Vec::new();
+            for s in input {
+                let sl = s.to_lowercase();
+                let mut idx = *index.get(&s).unwrap_or(&u16::MAX);
+                if idx == u16::MAX {
+                    if let Some(m) = base_re.find(&sl) {
+                        let base = &sl[m.start()..m.end()];
+                        if let Some(bi) = index.get(base) { idx = *bi; }
+                    }
                 }
+                let mut kind: u8 = 0;
+                let mut rank: u16 = 0;
+                if let Some(cap) = rc_re.captures(&sl) {
+                    kind = 1;
+                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                } else if let Some(cap) = pre_re.captures(&sl) {
+                    kind = 2;
+                    rank = cap.get(1).and_then(|g| g.as_str().parse::<u16>().ok()).map(|n| u16::MAX - n).unwrap_or(u16::MAX);
+                } else if sl.contains("snapshot") {
+                    kind = 3;
+                }
+                items.push((idx, kind, rank, s));
+            }
+            items.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            let mut seen: HashSet<String> = HashSet::new();
+            let mut out = Vec::new();
+            for (_, _, _, s) in items {
+                if seen.insert(s.clone()) { out.push(s); }
             }
             return out;
         }

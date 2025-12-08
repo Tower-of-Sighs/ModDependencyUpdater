@@ -2,6 +2,8 @@ use crate::util::{log_event, shorten};
 use anyhow::{anyhow, Context};
 use regex::Regex;
 use serde::Deserialize;
+use once_cell::sync::Lazy;
+static VERSION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d+(?:\.\d+)*(?:[-+][a-zA-Z0-9_.-]+)?").unwrap());
 
 #[derive(Deserialize, Debug)]
 struct CfModResponse {
@@ -31,8 +33,7 @@ struct CfModData {
 }
 
 fn extract_version(text: &str) -> Option<String> {
-    let re = Regex::new(r"\d+(?:\.\d+)*(?:[-+][a-zA-Z0-9_.-]+)?").unwrap();
-    for cap in re.captures_iter(text) {
+    for cap in VERSION_RE.captures_iter(text) {
         let m = cap.get(0)?.as_str();
         if m.contains('.') {
             return Some(m.to_string());
@@ -44,13 +45,15 @@ fn extract_version(text: &str) -> Option<String> {
 pub async fn get_project_meta(project_id: u32, api_key: &str) -> anyhow::Result<(String, u32)> {
     let client = crate::util::http_client()?;
     let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-    let resp = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .context("Failed to connect to CurseForge API")?;
+    let resp = crate::util::send_with_retry(
+        client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("Accept", "application/json"),
+        2,
+    )
+    .await
+    .context("Failed to connect to CurseForge API")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -90,13 +93,15 @@ pub async fn get_latest_cf_file(
 ) -> anyhow::Result<(Option<u32>, Option<String>, Option<u8>)> {
     let client = crate::util::http_client()?;
     let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-    let resp = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .context("Failed to fetch mod detail from CurseForge")?;
+    let resp = crate::util::send_with_retry(
+        client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("Accept", "application/json"),
+        2,
+    )
+    .await
+    .context("Failed to fetch mod detail from CurseForge")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -171,7 +176,6 @@ pub fn cf_mod_loader_to_tag(code: u8) -> &'static str {
         6 => "NeoForge",
         4 => "Fabric",
         5 => "Quilt",
-        2 => "Cauldron",
         3 => "LiteLoader",
         7 => "Rift",
         _ => "Unknown",
@@ -184,13 +188,15 @@ pub async fn get_cf_latest_indexes(
 ) -> anyhow::Result<Vec<CfLatestFileIndex>> {
     let client = crate::util::http_client()?;
     let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
-    let resp = client
-        .get(&url)
-        .header("x-api-key", api_key)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .context("Failed to fetch mod detail from CurseForge")?;
+    let resp = crate::util::send_with_retry(
+        client
+            .get(&url)
+            .header("x-api-key", api_key)
+            .header("Accept", "application/json"),
+        2,
+    )
+    .await
+    .context("Failed to fetch mod detail from CurseForge")?;
     let status = resp.status();
     let body_text = resp
         .text()

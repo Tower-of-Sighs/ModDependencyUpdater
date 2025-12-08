@@ -1,5 +1,8 @@
 use anyhow::anyhow;
 use regex::Regex;
+use once_cell::sync::Lazy;
+static RE_REPOSITORIES: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^\s*repositories\s*\{").unwrap());
+static RE_DEPENDENCIES: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?m)^\s*dependencies\s*\{").unwrap());
 
 pub fn ensure_curse_maven_repo(build_gradle: &str) -> String {
     if build_gradle.contains("https://cursemaven.com") || build_gradle.contains("curse.maven") {
@@ -14,11 +17,9 @@ pub fn ensure_curse_maven_repo(build_gradle: &str) -> String {
         }
     }"#;
 
-    // 尝试在已有的 repositories 块中插入
-    let repo_pattern = Regex::new(r"(?m)^\s*repositories\s*\{").unwrap();
-    if let Some(mat) = repo_pattern.find(build_gradle) {
+    if let Some(mat) = RE_REPOSITORIES.find(build_gradle) {
         let start = mat.end();
-        // 找到对应的闭合 '}'
+
         let mut brace_count = 1;
         let mut pos = start;
         let chars: Vec<char> = build_gradle.chars().collect();
@@ -44,7 +45,6 @@ pub fn ensure_curse_maven_repo(build_gradle: &str) -> String {
         return format!("{}{}\n{}\n{}", before, inside, curse_repo, after);
     }
 
-    // 如果没有 repositories 块，创建一个新的（放在文件顶部或 plugins 之后）
     if build_gradle.trim_start().starts_with("plugins {") {
         // 插入在 plugins 块之后
         let plugins_end = build_gradle.find('}').map(|i| i + 1).unwrap_or(0);
@@ -69,8 +69,7 @@ pub fn ensure_modrinth_maven_repo(build_gradle: &str) -> String {
         url = "https://api.modrinth.com/maven"
     }"#;
 
-    let repo_pattern = Regex::new(r"(?m)^\s*repositories\s*\{").unwrap();
-    if let Some(mat) = repo_pattern.find(build_gradle) {
+    if let Some(mat) = RE_REPOSITORIES.find(build_gradle) {
         let start = mat.end();
         let mut brace_count = 1;
         let mut pos = start;
@@ -129,8 +128,7 @@ pub fn generate_mr_dep(loader: &str, slug: &str, version_id: &str) -> anyhow::Re
 }
 
 fn insert_into_dependencies_block(build_gradle: &str, dep_line: &str) -> String {
-    let dep_pattern = Regex::new(r"(?m)^\s*dependencies\s*\{").unwrap();
-    if let Some(mat) = dep_pattern.find(build_gradle) {
+    if let Some(mat) = RE_DEPENDENCIES.find(build_gradle) {
         let start = mat.end();
         let mut brace_count = 1;
         let mut pos = start;
@@ -168,7 +166,6 @@ pub fn update_or_insert_dependency(build_gradle: &str, modid: &str, dep_line: &s
     let pattern = Regex::new(&pattern_str).unwrap();
 
     if let Some(mat) = pattern.find(build_gradle) {
-        // 替换整行
         let start = build_gradle[..mat.start()].rfind('\n').map_or(0, |i| i + 1);
         let end = build_gradle[mat.end()..]
             .find('\n')

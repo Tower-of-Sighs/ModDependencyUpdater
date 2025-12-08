@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context};
 use serde_json::json;
-use std::fs;
+use tokio::fs;
 use std::path::Path;
+use futures::stream::{self, StreamExt};
 
 use crate::cf::{get_cf_latest_indexes, get_latest_cf_file, get_project_meta};
 use crate::gradle::{
@@ -25,7 +26,7 @@ async fn process_update(
         return Err(anyhow!("Build.gradle file not found at {:?}", gradle_path));
     }
     let mut gradle_content =
-        fs::read_to_string(gradle_path).context("Could not read build.gradle")?;
+        fs::read_to_string(gradle_path).await.context("Could not read build.gradle")?;
     if source.to_lowercase() == "curseforge" {
         let api_key = if let Some(key) = cf_api_key.as_deref() {
             if key.trim().is_empty() {
@@ -60,7 +61,7 @@ async fn process_update(
         let dep_line = generate_dep(&loader, &slug, &modid_num.to_string(), file_id)?;
         gradle_content =
             update_or_insert_dependency(&gradle_content, &modid_num.to_string(), &dep_line);
-        fs::write(gradle_path, gradle_content).context("Failed to write build.gradle")?;
+        fs::write(gradle_path, gradle_content).await.context("Failed to write build.gradle")?;
         Ok(format!(
             "{}✅ Updated Dependency: {}\n🎉 New Version: {} (File ID: {})",
             level_msg,
@@ -86,7 +87,7 @@ async fn process_update(
         gradle_content = ensure_modrinth_maven_repo(&gradle_content);
         let dep_line = generate_mr_dep(&loader, &project_id, &ver_id)?;
         gradle_content = update_or_insert_dependency_mr(&gradle_content, &project_id, &dep_line);
-        fs::write(gradle_path, gradle_content).context("Failed to write build.gradle")?;
+        fs::write(gradle_path, gradle_content).await.context("Failed to write build.gradle")?;
         Ok(format!(
             "{}✅ Updated Dependency: {}\n🎉 New Version: {} (Version ID: {})",
             level_msg,
@@ -156,7 +157,6 @@ pub async fn get_project_options(
                     Some(6) => "NeoForge".to_string(),
                     Some(4) => "Fabric".to_string(),
                     Some(5) => "Quilt".to_string(),
-                    Some(2) => "Cauldron".to_string(),
                     Some(3) => "LiteLoader".to_string(),
                     Some(7) => "Rift".to_string(),
                     Some(_) | None => continue,
@@ -200,6 +200,7 @@ pub async fn get_project_options(
                         "forge" => "Forge".to_string(),
                         "neoforge" => "NeoForge".to_string(),
                         "fabric" => "Fabric".to_string(),
+                        "quilt" => "Quilt".to_string(),
                         other => other.to_string(),
                     })
                     .collect();
@@ -242,27 +243,27 @@ pub async fn update_dependencies_batch(
     loader: String,
     cf_api_key: Option<String>,
 ) -> Result<String, String> {
-    let mut output = String::new();
-    for item in items {
-        match process_update(
-            gradle_path.clone(),
-            item.clone(),
-            mc_version.clone(),
-            loader.clone(),
-            source.clone(),
-            cf_api_key.clone(),
-        )
-        .await
-        {
-            Ok(res) => {
-                output.push_str(&format!("\n[{}] {}\n", item, res));
-            }
-            Err(err) => {
-                output.push_str(&format!("\n[{}] ❌ {}\n", item, err));
+    let limit = 4usize;
+    let gradle_path_c = gradle_path.clone();
+    let source_c = source.clone();
+    let mc_version_c = mc_version.clone();
+    let loader_c = loader.clone();
+    let cf_api_key_c = cf_api_key.clone();
+    let s = stream::iter(items.into_iter().map(|item| {
+        let gradle_path = gradle_path_c.clone();
+        let source = source_c.clone();
+        let mc_version = mc_version_c.clone();
+        let loader = loader_c.clone();
+        let cf_api_key = cf_api_key_c.clone();
+        async move {
+            match process_update(gradle_path, item.clone(), mc_version, loader, source, cf_api_key).await {
+                Ok(res) => format!("\n[{}] {}\n", item, res),
+                Err(err) => format!("\n[{}] ❌ {}\n", item, err),
             }
         }
-    }
-    Ok(output)
+    }));
+    let results = s.buffer_unordered(limit).collect::<Vec<_>>().await;
+    Ok(results.into_iter().collect())
 }
 
 #[tauri::command]

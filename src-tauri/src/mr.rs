@@ -22,11 +22,12 @@ pub async fn get_latest_mr_version(
         "https://api.modrinth.com/v2/project/{}/version",
         project_slug
     );
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to connect to Modrinth API")?;
+    let resp = crate::util::send_with_retry(
+        client.get(&url),
+        2,
+    )
+    .await
+    .context("Failed to connect to Modrinth API")?;
     let status = resp.status();
     let body_text = resp
         .text()
@@ -83,11 +84,12 @@ pub async fn get_versions(project_slug: &str) -> anyhow::Result<Vec<MrVersion>> 
         "https://api.modrinth.com/v2/project/{}/version",
         project_slug
     );
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to connect to Modrinth API")?;
+    let resp = crate::util::send_with_retry(
+        client.get(&url),
+        2,
+    )
+    .await
+    .context("Failed to connect to Modrinth API")?;
     let status = resp.status();
     let body_text = resp
         .text()
