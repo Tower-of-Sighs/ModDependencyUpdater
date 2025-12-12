@@ -1,84 +1,88 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="/src/styles.css" />
-    <link rel="icon" href="/src/assets/app-icon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8"/>
+    <link href="/src/styles.css" rel="stylesheet"/>
+    <link href="/src/assets/app-icon.ico" rel="icon"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title data-i18n="app_title">Mod Dependency Updater</title>
     <script type="module" src="/src/main.ts" defer></script>
-  </head>
-  <body>
-    <div class="container">
-      <header class="app-header">
+</head>
+<body>
+<div class="container">
+    <header class="app-header">
         <div class="brand">
-          <img src="/src/assets/app-icon.ico" alt="App Icon" class="brand-icon" />
-          <div>
-            <h1 data-i18n="app_title">Mod Dependency Updater</h1>
-            <p class="subtitle" data-i18n="app_subtitle">Update your Gradle dependencies with ease</p>
-          </div>
+            <img alt="App Icon" class="brand-icon" src="/src/assets/app-icon.ico"/>
+            <div>
+                <h1 data-i18n="app_title">Mod Dependency Updater</h1>
+                <p class="subtitle" data-i18n="app_subtitle">Update your Gradle dependencies with ease</p>
+            </div>
         </div>
         <div class="controls">
-          <select id="lang-select" aria-label="Language">
-            <option value="zh-CN">中文</option>
-            <option value="en">English</option>
-          </select>
+            <select aria-label="Language" id="lang-select">
+                <option value="zh-CN">中文</option>
+                <option value="en">English</option>
+            </select>
         </div>
-      </header>
+    </header>
 
-      <main>
+    <main>
         <div class="card">
-          <div class="form-group">
-            <label for="gradle-path" data-i18n="label_gradle_path">build.gradle Path</label>
-            <div class="input-group">
-              <input id="gradle-path" type="text" data-i18n-placeholder="ph_select_gradle" placeholder="Select your build.gradle..." readonly />
-              <button id="browse-btn" class="secondary" data-i18n="btn_browse">Browse</button>
-            </div>
-          </div>
-
-          <div class="grid-2">
             <div class="form-group">
-              <label for="source-select" data-i18n="label_source">Source</label>
-              <select id="source-select">
-                <option value="curseforge">CurseForge</option>
-                <option value="modrinth">Modrinth</option>
-              </select>
-            </div>
-            
-            <div class="form-group" id="project-group">
-              <label id="project-label" for="project-id" data-i18n="label_project_id">Project ID</label>
-              <input id="project-id" type="text" data-i18n-placeholder="ph_project_id" placeholder="123456" />
-            </div>
-          </div>
-
-          <div class="grid-2">
-            <div class="form-group" id="mc-version-select-group">
-              <label for="mc-version" data-i18n="label_mc_version">Minecraft Version</label>
-              <select id="mc-version"></select>
+                <label data-i18n="label_gradle_path" for="gradle-path">build.gradle Path</label>
+                <div class="input-group">
+                    <input data-i18n-placeholder="ph_select_gradle" id="gradle-path" placeholder="Select your build.gradle..."
+                           readonly type="text"/>
+                    <button class="secondary" data-i18n="btn_browse" id="browse-btn">Browse</button>
+                </div>
             </div>
 
-            <div class="form-group" id="loader-select-group">
-              <label for="loader-select" data-i18n="label_loader">Loader</label>
-              <select id="loader-select"></select>
-            </div>
-          </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label data-i18n="label_source" for="source-select">Source</label>
+                    <select id="source-select">
+                        <option value="curseforge">CurseForge</option>
+                        <option value="modrinth">Modrinth</option>
+                    </select>
+                </div>
 
-          <div class="grid-2">
-            <div class="form-group" id="mc-version-input-group" style="display:none">
-              <label for="mc-version-input" data-i18n="label_mc_version_input">Minecraft Version (manual)</label>
-              <input id="mc-version-input" type="text" data-i18n-placeholder="label_mc_version" placeholder="Minecraft Version" />
+                <div class="form-group" id="project-group">
+                    <label data-i18n="label_project_id" for="project-id" id="project-label">Project ID</label>
+                    <input data-i18n-placeholder="ph_project_id" id="project-id" placeholder="123456" type="text"/>
+                </div>
             </div>
 
-            <div class="form-group" id="loader-input-group" style="display:none">
-              <label for="loader-input" data-i18n="label_loader_input">Loader (manual)</label>
-              <input id="loader-input" type="text" data-i18n-placeholder="label_loader" placeholder="Loader" />
-            </div>
-          </div>
+            <div class="grid-2">
+                <div class="form-group" id="mc-version-select-group">
+                    <label data-i18n="label_mc_version" for="mc-version">Minecraft Version</label>
+                    <select id="mc-version"></select>
+                </div>
 
-          <div class="form-group" id="api-key-group">
-            <label for="cf-api-key" data-i18n="label_cf_api">CurseForge API Key <small data-i18n="hint_cf_api">(Optional if env var set)</small></label>
-            <input id="cf-api-key" type="password" data-i18n-placeholder="ph_cf_api" placeholder="Enter API Key..." />
-          </div>
+                <div class="form-group" id="loader-select-group">
+                    <label data-i18n="label_loader" for="loader-select">Loader</label>
+                    <select id="loader-select"></select>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="form-group" id="mc-version-input-group" style="display:none">
+                    <label data-i18n="label_mc_version_input" for="mc-version-input">Minecraft Version (manual)</label>
+                    <input data-i18n-placeholder="label_mc_version" id="mc-version-input" placeholder="Minecraft Version"
+                           type="text"/>
+                </div>
+
+                <div class="form-group" id="loader-input-group" style="display:none">
+                    <label data-i18n="label_loader_input" for="loader-input">Loader (manual)</label>
+                    <input data-i18n-placeholder="label_loader" id="loader-input" placeholder="Loader" type="text"/>
+                </div>
+            </div>
+
+            <div class="form-group" id="api-key-group">
+                <label data-i18n="label_cf_api" for="cf-api-key">CurseForge API Key <small data-i18n="hint_cf_api">(Optional
+                    if env var set)</small></label>
+                <input data-i18n-placeholder="ph_cf_api" id="cf-api-key" placeholder="Enter API Key..."
+                       type="password"/>
+            </div>
 
           <div class="grid-2">
             <div class="form-group">
@@ -93,36 +97,51 @@
             </div>
           </div>
 
-          <div class="form-group" id="batch-group" style="display:none">
-            <label for="batch-items" data-i18n="label_batch_items">Projects (one per line)</label>
-            <textarea id="batch-items" rows="10" data-i18n-placeholder="ph_batch_items" placeholder="123456\nmodrinth-slug"></textarea>
-          </div>
+            <div class="form-group">
+                <label data-i18n="label_cache_versions" for="cache-toggle">Cache mod versions</label>
+                <div class="input-group">
+                    <label class="switch">
+                        <input id="cache-toggle" type="checkbox"/>
+                        <span class="slider"></span>
+                    </label>
+                    <button class="secondary" data-i18n="btn_clear_cache" id="clear-cache-btn">Clear Cache</button>
+                    <button class="secondary" data-i18n="btn_refresh_cache" id="refresh-cache-btn">Refresh Cache
+                    </button>
+                </div>
+                <small data-i18n="hint_cache_versions">Cache full version metadata for faster operations</small>
+            </div>
 
-          <button id="update-btn" class="primary" data-i18n="btn_update">Update Dependency</button>
+            <div class="form-group" id="batch-group" style="display:none">
+                <label data-i18n="label_batch_items" for="batch-items">Projects (one per line)</label>
+                <textarea data-i18n-placeholder="ph_batch_items" id="batch-items" placeholder="123456\nmodrinth-slug"
+                          rows="10"></textarea>
+            </div>
+
+            <button class="primary" data-i18n="btn_update" id="update-btn">Update Dependency</button>
         </div>
 
         <div class="output-section">
-          <h3 data-i18n="label_log">Log Output</h3>
-          <div class="input-group">
-            <button id="clear-log-btn" class="secondary" data-i18n="btn_clear_log">Clear Logs</button>
-            <button id="save-log-btn" class="secondary" data-i18n="btn_save_log">Save Logs</button>
-            <button id="open-log-btn" class="secondary" data-i18n="btn_open_logs">Open Logs Folder</button>
-          </div>
-          <div id="log-output" class="log-box" data-i18n="log_wait">Waiting for action...</div>
+            <h3 data-i18n="label_log">Log Output</h3>
+            <div class="input-group">
+                <button class="secondary" data-i18n="btn_clear_log" id="clear-log-btn">Clear Logs</button>
+                <button class="secondary" data-i18n="btn_save_log" id="save-log-btn">Save Logs</button>
+                <button class="secondary" data-i18n="btn_open_logs" id="open-log-btn">Open Logs Folder</button>
+            </div>
+            <div class="log-box" data-i18n="log_wait" id="log-output">Waiting for action...</div>
         </div>
         <div id="version-modal" class="modal-overlay" style="display:none">
-          <div class="modal">
-            <h3 data-i18n="label_select_version">Select Version</h3>
-            <div id="mod-strip" class="mod-strip"></div>
-            <div id="version-list" class="version-list"></div>
-            <div class="input-group">
-              <button id="version-cancel" class="secondary" data-i18n="btn_cancel">Cancel</button>
-              <button id="version-apply" class="primary" data-i18n="btn_apply">Apply Selected Version</button>
-              <button id="version-apply-all" class="primary" data-i18n="btn_apply_all">Apply All Selected</button>
+            <div class="modal">
+                <h3 data-i18n="label_select_version">Select Version</h3>
+                <div class="mod-strip" id="mod-strip"></div>
+                <div class="version-list" id="version-list"></div>
+                <div class="input-group">
+                    <button class="secondary" data-i18n="btn_cancel" id="version-cancel">Cancel</button>
+                    <button class="primary" data-i18n="btn_apply" id="version-apply">Apply Selected Version</button>
+                    <button class="primary" data-i18n="btn_apply_all" id="version-apply-all">Apply All Selected</button>
+                </div>
             </div>
-          </div>
         </div>
-      </main>
-    </div>
-  </body>
+    </main>
+</div>
+</body>
 </html>

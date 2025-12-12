@@ -1,3 +1,4 @@
+mod cache;
 mod cf;
 mod gradle;
 mod mojang;
@@ -23,7 +24,9 @@ pub fn run() {
             operations::get_log_dir,
             operations::apply_selected_versions_batch,
             operations::get_batch_mod_briefs,
-            operations::save_log
+            operations::save_log,
+            operations::clear_all_caches,
+            operations::refresh_mojang_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

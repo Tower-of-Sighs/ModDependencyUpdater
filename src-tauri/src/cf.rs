@@ -1,3 +1,4 @@
+use crate::cache::{now_millis, read_bincode, write_bincode};
 use crate::util::{log_event, shorten};
 use anyhow::{anyhow, Context};
 use once_cell::sync::Lazy;
@@ -62,7 +63,10 @@ pub fn strip_jar_suffix(name: &str) -> String {
     }
 }
 
-pub async fn get_cf_mod_brief(project_id: u32, api_key: &str) -> anyhow::Result<(String, Option<String>)> {
+pub async fn get_cf_mod_brief(
+    project_id: u32,
+    api_key: &str,
+) -> anyhow::Result<(String, Option<String>)> {
     let client = crate::util::http_client()?;
     let url = format!("https://api.curseforge.com/v1/mods/{}", project_id);
     let resp = crate::util::send_with_retry(
@@ -75,7 +79,10 @@ pub async fn get_cf_mod_brief(project_id: u32, api_key: &str) -> anyhow::Result<
     .await
     .context("Failed to fetch mod detail from CurseForge")?;
     let status = resp.status();
-    let body_text = resp.text().await.context("Failed to read mod detail body")?;
+    let body_text = resp
+        .text()
+        .await
+        .context("Failed to read mod detail body")?;
     if !status.is_success() {
         crate::util::log_event(
             "error",
@@ -105,7 +112,14 @@ pub async fn get_cf_mod_brief(project_id: u32, api_key: &str) -> anyhow::Result<
         .thumbnail_url
         .clone()
         .or(Some(body.data.logo.url.clone()));
-    log_event("info", &format!("cf_mod_brief {} {}", body.data.name, icon.clone().unwrap_or_default()));
+    log_event(
+        "info",
+        &format!(
+            "cf_mod_brief {} {}",
+            body.data.name,
+            icon.clone().unwrap_or_default()
+        ),
+    );
     Ok((body.data.name, icon))
 }
 
@@ -275,7 +289,7 @@ pub async fn get_cf_latest_indexes(
     Ok(body.data.latest_files_indexes)
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct CfFileItem {
     #[serde(rename = "id")]
     pub id: u32,
@@ -296,6 +310,17 @@ struct CfFilesResponse {
     data: Vec<CfFileItem>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct CfFilesCache {
+    files: Vec<CfFileItem>,
+    fetched_at: u64,
+}
+
+fn cf_cache_name(project_id: u32, mc_version: &str, loader_code: u8) -> String {
+    let v = crate::cache::safe_key_segment(mc_version);
+    format!("cf-files-{}-{}-{}.bin", project_id, v, loader_code)
+}
+
 pub fn cf_mod_loader_code_from_name(name: &str) -> Option<u8> {
     match name.to_lowercase().as_str() {
         "forge" => Some(1),
@@ -311,45 +336,76 @@ pub async fn get_cf_files_filtered(
     mc_version: &str,
     loader_code: u8,
     api_key: &str,
+    use_cache: bool,
 ) -> anyhow::Result<Vec<CfFileItem>> {
     let client = crate::util::http_client()?;
-    let url = format!(
-        "https://api.curseforge.com/v1/mods/{}/files?gameVersion={}&modLoaderType={}&pageSize=50",
-        project_id, mc_version, loader_code
-    );
-    let resp = crate::util::send_with_retry(
-        client
-            .get(&url)
-            .header("x-api-key", api_key)
-            .header("Accept", "application/json"),
-        2,
-    )
-    .await
-    .context("Failed to fetch mod files from CurseForge")?;
-    let status = resp.status();
-    let body_text = resp.text().await.context("Failed to read mod files body")?;
-    if !status.is_success() {
-        log_event(
-            "error",
-            &format!(
-                "CF files status {} url {} body {}",
-                status,
-                url,
-                shorten(&body_text, 400)
-            ),
-        );
-        return Err(anyhow!(format!(
-            "CurseForge API Error (Mod Files): {} body {}",
-            status,
-            shorten(&body_text, 400)
-        )));
+    const TTL_MS: u64 = 6 * 60 * 60 * 1000;
+    if use_cache {
+        if let Ok(cache) =
+            read_bincode::<CfFilesCache>(&cf_cache_name(project_id, mc_version, loader_code))
+        {
+            let age = now_millis().saturating_sub(cache.fetched_at);
+            if age <= TTL_MS {
+                return Ok(cache.files);
+            }
+        }
     }
-    let body: CfFilesResponse = serde_json::from_str(&body_text).map_err(|e| {
-        anyhow!(format!(
-            "CurseForge files parse error: {} body {}",
-            e,
-            shorten(&body_text, 400)
-        ))
-    })?;
-    Ok(body.data)
+    let page_size: u32 = 50;
+    let mut index: u32 = 0;
+    let mut all: Vec<CfFileItem> = Vec::new();
+    const MAX_FILES: usize = 500;
+    loop {
+        let url = format!(
+            "https://api.curseforge.com/v1/mods/{}/files?gameVersion={}&modLoaderType={}&pageSize={}&index={}",
+            project_id, mc_version, loader_code, page_size, index
+        );
+        let resp = crate::util::send_with_retry(
+            client
+                .get(&url)
+                .header("x-api-key", api_key)
+                .header("Accept", "application/json"),
+            2,
+        )
+        .await
+        .context("Failed to fetch mod files from CurseForge")?;
+        let status = resp.status();
+        let body_text = resp.text().await.context("Failed to read mod files body")?;
+        if !status.is_success() {
+            log_event(
+                "error",
+                &format!(
+                    "CF files status {} url {} body {}",
+                    status,
+                    url,
+                    shorten(&body_text, 400)
+                ),
+            );
+            return Err(anyhow!(format!(
+                "CurseForge API Error (Mod Files): {} body {}",
+                status,
+                shorten(&body_text, 400)
+            )));
+        }
+        let body: CfFilesResponse = serde_json::from_str(&body_text).map_err(|e| {
+            anyhow!(format!(
+                "CurseForge files parse error: {} body {}",
+                e,
+                shorten(&body_text, 400)
+            ))
+        })?;
+        let count = body.data.len();
+        all.extend(body.data.into_iter());
+        if count < page_size as usize || all.len() >= MAX_FILES {
+            break;
+        }
+        index += 1;
+    }
+    if use_cache {
+        let cache = CfFilesCache {
+            files: all.clone(),
+            fetched_at: now_millis(),
+        };
+        let _ = write_bincode(&cf_cache_name(project_id, mc_version, loader_code), &cache);
+    }
+    Ok(all)
 }

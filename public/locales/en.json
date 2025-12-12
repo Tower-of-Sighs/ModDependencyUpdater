@@ -26,12 +26,16 @@
   "btn_clear_log": "Clear Logs",
   "btn_save_log": "Save Logs",
   "btn_open_logs": "Open Logs Folder",
+  "btn_clear_cache": "Clear Cache",
+  "btn_refresh_cache": "Refresh Cache",
   "label_mc_version_input": "Minecraft Version (manual)",
   "label_loader_input": "Loader (manual)",
   "label_select_version": "Select Version",
   "btn_cancel": "Cancel",
   "btn_apply": "Apply Selected Version",
   "btn_apply_all": "Apply All Selected",
+  "label_cache_versions": "Cache mod versions",
+  "hint_cache_versions": "Cache full version metadata locally for faster operations",
   "log_tauri_not_ready_options": "Tauri not ready: cannot fetch project options",
   "log_missing_project_id": "Please enter a Project ID.",
   "log_parsed_options": "Parsed options: versions {v}, loaders {l}",
@@ -61,5 +65,9 @@
   "log_versions_cached": "Versions for {key} from cache (count {n})",
   "log_open_logs_dir": "Opened logs folder: {dir}",
   "log_open_logs_failed": "Open logs folder failed: {err}",
-  "log_loading": "Loading..."
+  "log_loading": "Loading...",
+  "log_cache_cleared": "Cache cleared.",
+  "log_cache_clear_failed": "Clear cache failed: {err}",
+  "log_cache_refreshed": "Cache refresh triggered.",
+  "log_cache_refresh_failed": "Cache refresh failed: {err}"
 }

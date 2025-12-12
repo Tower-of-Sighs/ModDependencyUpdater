@@ -5,8 +5,10 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
-use crate::util::{app_data_dir, log_event, shorten};
+use crate::cache::cache_path;
+use crate::util::{log_event, shorten};
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 static MOJANG_INDEX: Lazy<RwLock<HashMap<String, u16>>> = Lazy::new(|| RwLock::new(HashMap::new()));
@@ -25,12 +27,27 @@ struct MojangManifest {
 }
 
 fn cache_file() -> PathBuf {
-    let base = app_data_dir().join("cache");
-    let _ = std::fs::create_dir_all(&base);
-    base.join("mc_versions.bin")
+    cache_path("mc_versions.bin")
 }
 
 pub async fn refresh_manifest_cache_on_startup() -> anyhow::Result<()> {
+    const TTL_SECS: u64 = 7 * 24 * 60 * 60;
+    let path = cache_file();
+    if let Ok(meta) = fs::metadata(&path) {
+        if let Ok(modified) = meta.modified() {
+            if let Ok(age) = SystemTime::now().duration_since(modified) {
+                if age.as_secs() <= TTL_SECS {
+                    if let Ok(bytes) = fs::read(&path) {
+                        if let Ok(index) = deserialize::<HashMap<String, u16>>(&bytes) {
+                            let mut w = MOJANG_INDEX.write().unwrap();
+                            *w = index;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let client = crate::util::http_client()?;
     let url = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
     let resp = crate::util::send_with_retry(client.get(url), 2)

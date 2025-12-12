@@ -81,7 +81,8 @@ pub fn resolve_cf_api_key(cf_api_key: Option<String>) -> anyhow::Result<String> 
     } else {
         std::env::var("CF_API_KEY").ok()
     };
-    api_key.ok_or_else(|| anyhow::anyhow!("CF_API_KEY is required for CurseForge (Input or Env Var)"))
+    api_key
+        .ok_or_else(|| anyhow::anyhow!("CF_API_KEY is required for CurseForge (Input or Env Var)"))
 }
 
 pub fn loader_name_to_tag(name: &str) -> String {
@@ -135,7 +136,15 @@ pub async fn cache_icon_from_url(source: &str, key: &str, url: &str) -> anyhow::
         }
     }
     if path.exists() && use_cached {
-        log_event("info", &format!("icon_cache_hit {} {} -> {}", source, key, path.to_string_lossy()));
+        log_event(
+            "info",
+            &format!(
+                "icon_cache_hit {} {} -> {}",
+                source,
+                key,
+                path.to_string_lossy()
+            ),
+        );
         return Ok(path.to_string_lossy().into());
     }
     let client = http_client()?;
@@ -147,7 +156,15 @@ pub async fn cache_icon_from_url(source: &str, key: &str, url: &str) -> anyhow::
                     if let Err(e) = std::fs::write(&path, &bytes) {
                         last_err = Some(anyhow::anyhow!(e));
                     } else {
-                        log_event("info", &format!("icon_cached {} {} -> {}", source, key, path.to_string_lossy()));
+                        log_event(
+                            "info",
+                            &format!(
+                                "icon_cached {} {} -> {}",
+                                source,
+                                key,
+                                path.to_string_lossy()
+                            ),
+                        );
                         return Ok(path.to_string_lossy().into());
                     }
                 }
@@ -158,7 +175,15 @@ pub async fn cache_icon_from_url(source: &str, key: &str, url: &str) -> anyhow::
         tokio::time::sleep(tokio::time::Duration::from_millis(150 * (1 << attempt))).await;
     }
     if path.exists() {
-        log_event("warn", &format!("icon_download_failed_using_cached {} {} url {}", source, key, shorten(url, 200)));
+        log_event(
+            "warn",
+            &format!(
+                "icon_download_failed_using_cached {} {} url {}",
+                source,
+                key,
+                shorten(url, 200)
+            ),
+        );
         return Ok(path.to_string_lossy().into());
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("icon download failed")))

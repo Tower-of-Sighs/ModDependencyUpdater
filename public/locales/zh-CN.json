@@ -26,12 +26,16 @@
   "btn_clear_log": "清屏",
   "btn_save_log": "保存日志",
   "btn_open_logs": "打开日志文件夹",
+  "btn_clear_cache": "清理缓存",
+  "btn_refresh_cache": "刷新缓存",
   "label_mc_version_input": "Minecraft 版本（手动）",
   "label_loader_input": "加载器（手动）",
   "label_select_version": "选择版本",
   "btn_cancel": "取消",
   "btn_apply": "应用所选版本",
   "btn_apply_all": "应用所有已选",
+  "label_cache_versions": "缓存模组版本信息",
+  "hint_cache_versions": "启用后将完整缓存模组版本信息以提升性能",
   "log_tauri_not_ready_options": "Tauri 未就绪：无法解析项目信息",
   "log_missing_project_id": "请先填写项目标识",
   "log_parsed_options": "已解析可选项：版本 {v}，加载器 {l}",
@@ -61,5 +65,9 @@
   "log_versions_cached": "{key} 版本来自缓存（数量 {n}）",
   "log_open_logs_dir": "已打开日志文件夹：{dir}",
   "log_open_logs_failed": "打开日志文件夹失败：{err}",
-  "log_loading": "加载中..."
+  "log_loading": "加载中...",
+  "log_cache_cleared": "缓存已清理。",
+  "log_cache_clear_failed": "清理缓存失败: {err}",
+  "log_cache_refreshed": "缓存刷新已触发。",
+  "log_cache_refresh_failed": "刷新缓存失败: {err}"
 }
