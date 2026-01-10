@@ -9,29 +9,52 @@ import {setOptions, updateUIState} from "./ui";
 import {
     batchItems,
     browseBtn,
+    cacheToggle,
+    clearCacheBtn,
     clearLogBtn,
     gradlePathInput,
     langSelect,
     loaderInput,
     loaderSelect,
+    logOutput,
+    mainView,
     mcVersionInput,
     mcVersionSelect,
-    modStrip,
     modeSelect,
+    modStrip,
     openLogBtn,
     projectIdInput,
+    refreshCacheBtn,
     saveLogBtn,
     sourceSelect,
+    toolAwInputMapping,
+    toolAwInputMappingGroup,
+    toolAwOutputMapping,
+    toolAwOutputMappingGroup,
+    toolAwOutputName,
+    toolAwOutputNameGroup,
+    toolAwTargetMapping,
+    toolAwTargetMappingGroup,
+    toolBackBtn,
+    toolBrowseBtn,
+    toolClearLogBtn,
+    toolConvertBtn,
+    toolDirection,
+    toolFailures,
+    toolInputPath,
+    toolLogOutput,
+    toolMcVersion,
+    toolOpenLogBtn,
+    toolSaveLogBtn,
+    toolsBtn,
+    toolStats,
+    toolView,
+    updateBtn,
     versionApplyAllBtn,
     versionApplyBtn,
     versionCancelBtn,
     versionList,
     versionModal,
-    logOutput,
-    updateBtn,
-    cacheToggle,
-    clearCacheBtn,
-    refreshCacheBtn,
 } from "./dom";
 import {ProjectOptions} from "./types";
 
@@ -507,6 +530,156 @@ export function bindEvents() {
             }
         } catch (err) {
             log(t("log_error", "Error: {err}", {err: String(err)}), true);
+        }
+    });
+    if (toolsBtn) toolsBtn.addEventListener("click", () => {
+        mainView.style.display = "none";
+        toolView.style.display = "block";
+        toolLogOutput.textContent = "";
+    });
+    if (toolBackBtn) toolBackBtn.addEventListener("click", () => {
+        toolView.style.display = "none";
+        mainView.style.display = "block";
+        logOutput.textContent = "";
+    });
+    if (toolDirection) toolDirection.addEventListener("change", () => {
+        const dir = toolDirection.value;
+        toolAwInputMappingGroup.style.display = dir === "aw_to_at" || dir === "aw_to_aw" ? "block" : "none";
+        toolAwTargetMappingGroup.style.display = dir === "at_to_aw" ? "block" : "none";
+        toolAwOutputMappingGroup.style.display = dir === "aw_to_aw" ? "block" : "none";
+        toolAwOutputNameGroup.style.display = dir === "at_to_aw" || dir === "aw_to_aw" ? "block" : "none";
+    });
+    if (toolBrowseBtn) toolBrowseBtn.addEventListener("click", async () => {
+        if (!isTauriReady()) {
+            toolLogOutput.textContent = "Tauri not ready: cannot open file dialog";
+            return;
+        }
+        try {
+            const selected = await open({
+                multiple: false,
+                filters: [
+                    {
+                        name: "Access Widener/Transformer",
+                        extensions: ["accesswidener", "cfg", "*"],
+                    },
+                ],
+            });
+            if (selected) {
+                toolInputPath.value = selected as string;
+            }
+        } catch (err) {
+            toolLogOutput.textContent = `Error selecting file: ${String(err)}`;
+        }
+    });
+    if (toolClearLogBtn) toolClearLogBtn.addEventListener("click", () => {
+        toolLogOutput.textContent = "";
+    });
+    if (toolSaveLogBtn) toolSaveLogBtn.addEventListener("click", async () => {
+        if (!isTauriReady()) {
+            toolLogOutput.textContent = "Tauri not ready: cannot save log";
+            return;
+        }
+        try {
+            const path = await invoke<string>("save_log", {content: toolLogOutput.textContent || ""});
+            toolLogOutput.textContent = `Saved log: ${path}`;
+        } catch (err) {
+            toolLogOutput.textContent = `Save failed: ${String(err)}`;
+        }
+    });
+    if (toolOpenLogBtn) toolOpenLogBtn.addEventListener("click", async () => {
+        if (!isTauriReady()) {
+            toolLogOutput.textContent = "Tauri not ready: cannot invoke backend commands";
+            return;
+        }
+        try {
+            const dir = await invoke<string>("get_log_dir");
+            await openExternal(dir);
+            toolLogOutput.textContent = `Opened logs folder: ${dir}`;
+        } catch (err) {
+            toolLogOutput.textContent = `Open logs folder failed: ${String(err)}`;
+        }
+    });
+    if (toolConvertBtn) toolConvertBtn.addEventListener("click", async () => {
+        if (!isTauriReady()) {
+            toolLogOutput.textContent = "Tauri not ready: cannot invoke backend commands";
+            return;
+        }
+        toolStats.textContent = "";
+        toolFailures.innerHTML = "";
+        const inputPath = toolInputPath.value.trim();
+        const mcVersion = toolMcVersion.value.trim();
+        const dir = toolDirection.value;
+        if (!inputPath) {
+            toolLogOutput.textContent = "Please select an input file.";
+            return;
+        }
+        if (!mcVersion) {
+            toolLogOutput.textContent = "Please enter Minecraft version.";
+            return;
+        }
+        toolConvertBtn.disabled = true;
+        toolLogOutput.textContent = "Converting...";
+        try {
+            const res = await invoke<{
+                outputPath: string;
+                converted: number;
+                failed: number;
+                failures: string[]
+            }>("convert_aw_at", {
+                inputPath,
+                mcVersion,
+                direction: dir,
+                inputMapping: dir === "aw_to_at" || dir === "aw_to_aw" ? toolAwInputMapping.value : null,
+                outputMapping:
+                    dir === "at_to_aw" ? toolAwTargetMapping.value :
+                        dir === "aw_to_aw" ? toolAwOutputMapping.value : null,
+                awOutputName: (dir === "at_to_aw" || dir === "aw_to_aw") ? (toolAwOutputName.value.trim() || null) : null,
+            });
+            toolLogOutput.textContent = `Converted: ${res.outputPath}`;
+            toolStats.textContent = `Converted: ${res.converted}, Failed: ${res.failed}`;
+            if (Array.isArray(res.failures)) {
+                const total = res.failures.length;
+                const threshold = 200;
+                const list = document.createElement("ul");
+                const items = total > threshold ? res.failures.slice(0, threshold) : res.failures;
+                items.forEach(msg => {
+                    const li = document.createElement("li");
+                    li.textContent = msg;
+                    list.appendChild(li);
+                });
+                toolFailures.appendChild(list);
+                if (total > threshold) {
+                    const btn = document.createElement("button");
+                    btn.className = "secondary";
+                    btn.textContent = `Show All (${total})`;
+                    btn.addEventListener("click", () => {
+                        toolFailures.innerHTML = "";
+                        const fullList = document.createElement("ul");
+                        res.failures.forEach(msg => {
+                            const li = document.createElement("li");
+                            li.textContent = msg;
+                            fullList.appendChild(li);
+                        });
+                        const collapseBtn = document.createElement("button");
+                        collapseBtn.className = "secondary";
+                        collapseBtn.textContent = "Collapse";
+                        collapseBtn.addEventListener("click", () => {
+                            toolFailures.innerHTML = "";
+                            toolFailures.appendChild(list);
+                            toolFailures.appendChild(btn);
+                        });
+                        toolFailures.appendChild(fullList);
+                        toolFailures.appendChild(collapseBtn);
+                    });
+                    toolFailures.appendChild(btn);
+                }
+            }
+        } catch (err) {
+            toolLogOutput.textContent = `Convert failed: ${String(err)}`;
+            toolStats.textContent = "";
+            toolFailures.innerHTML = "";
+        } finally {
+            toolConvertBtn.disabled = false;
         }
     });
 }

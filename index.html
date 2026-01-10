@@ -23,10 +23,11 @@
                 <option value="zh-CN">中文</option>
                 <option value="en">English</option>
             </select>
+            <button class="secondary" data-i18n="btn_tools" id="tools-btn">Tools</button>
         </div>
     </header>
 
-    <main>
+    <main id="main-view">
         <div class="card">
             <div class="form-group">
                 <label data-i18n="label_gradle_path" for="gradle-path">build.gradle Path</label>
@@ -84,18 +85,18 @@
                        type="password"/>
             </div>
 
-          <div class="grid-2">
-            <div class="form-group">
-              <label for="mode-select" data-i18n="label_mode">Mode</label>
-              <select id="mode-select">
-                <option value="single" data-i18n="mode_single">Single</option>
-                <option value="batch" data-i18n="mode_batch">Batch</option>
-              </select>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label data-i18n="label_mode" for="mode-select">Mode</label>
+                    <select id="mode-select">
+                        <option data-i18n="mode_single" value="single">Single</option>
+                        <option data-i18n="mode_batch" value="batch">Batch</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <button class="secondary" data-i18n="btn_fetch_options" id="fetch-options">Fetch Options</button>
+                </div>
             </div>
-            <div class="form-group">
-              <button id="fetch-options" class="secondary" data-i18n="btn_fetch_options">Fetch Options</button>
-            </div>
-          </div>
 
             <div class="form-group">
                 <label data-i18n="label_cache_versions" for="cache-toggle">Cache mod versions</label>
@@ -140,6 +141,86 @@
                     <button class="primary" data-i18n="btn_apply_all" id="version-apply-all">Apply All Selected</button>
                 </div>
             </div>
+        </div>
+    </main>
+    <main id="tool-view" style="display:none">
+        <div class="card">
+            <div class="form-group">
+                <div class="input-group">
+                    <h3 data-i18n="tool_title" id="tool-title">Mapping Converter (AW ↔ AT)</h3>
+                    <button class="secondary" data-i18n="btn_back" id="tool-back-btn">Back</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label data-i18n="label_input_file" for="tool-input-path" id="tool-label-input">Input File</label>
+                <div class="input-group">
+                    <input data-i18n-placeholder="ph_select_aw_at" id="tool-input-path"
+                           placeholder="Select your AW/AT file..." readonly type="text"/>
+                    <button class="secondary" data-i18n="btn_browse" id="tool-browse-btn">Browse</button>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label data-i18n="label_mc_version_tool" for="tool-mc-version" id="tool-label-mc">Minecraft
+                        Version</label>
+                    <input id="tool-mc-version" placeholder="1.21.1" type="text"/>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="label_direction" for="tool-direction" id="tool-label-direction">Direction</label>
+                    <select id="tool-direction">
+                        <option data-i18n="dir_aw_to_at" value="aw_to_at">AW → AT</option>
+                        <option data-i18n="dir_at_to_aw" value="at_to_aw">AT → AW</option>
+                        <option data-i18n="dir_aw_to_aw" value="aw_to_aw">AW → AW</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid-2">
+                <div class="form-group" id="tool-aw-input-mapping-group" style="display:none">
+                    <label data-i18n="label_aw_input_mapping" for="tool-aw-input-mapping" id="tool-label-aw-input">AW
+                        Input Mapping</label>
+                    <select id="tool-aw-input-mapping">
+                        <option data-i18n="opt_mapping_official" value="official">Official</option>
+                        <option data-i18n="opt_mapping_yarn" value="yarn">Yarn</option>
+                    </select>
+                </div>
+                <div class="form-group" id="tool-aw-output-mapping-group" style="display:none">
+                    <label data-i18n="label_aw_output_mapping" for="tool-aw-output-mapping" id="tool-label-aw-output">AW
+                        Output Mapping</label>
+                    <select id="tool-aw-output-mapping">
+                        <option data-i18n="opt_mapping_official" value="official">Official</option>
+                        <option data-i18n="opt_mapping_yarn" value="yarn">Yarn</option>
+                    </select>
+                </div>
+                <div class="form-group" id="tool-aw-target-mapping-group" style="display:none">
+                    <label data-i18n="label_aw_target_mapping" for="tool-aw-target-mapping" id="tool-label-aw-target">AW
+                        Target Mapping</label>
+                    <select id="tool-aw-target-mapping">
+                        <option data-i18n="opt_mapping_official" value="official">Official</option>
+                        <option data-i18n="opt_mapping_yarn" value="yarn">Yarn</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group" id="tool-aw-output-name-group" style="display:none">
+                <label data-i18n="label_aw_output_name" for="tool-aw-output-name">AW Output File Name</label>
+                <input data-i18n-placeholder="ph_aw_output_name" id="tool-aw-output-name"
+                       placeholder="converted.accesswidener" type="text"/>
+            </div>
+            <div class="form-group">
+                <button class="primary" data-i18n="btn_convert" id="tool-convert-btn">Convert</button>
+            </div>
+            <div class="form-group">
+                <div id="tool-stats"></div>
+                <div id="tool-failures"></div>
+            </div>
+        </div>
+        <div class="output-section">
+            <h3 data-i18n="label_log">Log Output</h3>
+            <div class="input-group">
+                <button class="secondary" data-i18n="btn_clear_log" id="tool-clear-log-btn">Clear Logs</button>
+                <button class="secondary" data-i18n="btn_save_log" id="tool-save-log-btn">Save Logs</button>
+                <button class="secondary" data-i18n="btn_open_logs" id="tool-open-log-btn">Open Logs Folder</button>
+            </div>
+            <div class="log-box" id="tool-log-output"></div>
         </div>
     </main>
 </div>
